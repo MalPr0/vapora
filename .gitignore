@@ -1,0 +1,20 @@
+# Build output
+/vapora
+/dist/
+*.exe
+*.test
+*.out
+
+# Go tooling
+/vendor/
+go.work
+go.work.sum
+
+# Local scratch
+*.local
+.env
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

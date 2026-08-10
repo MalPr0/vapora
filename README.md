@@ -1,0 +1,119 @@
+# vapora
+
+A base tool to open a direct communication channel between two peers across the
+internet, from one shared link, with no account, no registration and no server
+of your own. The chat that ships with it is the test harness, not the product:
+it exists to prove the channel carries traffic.
+
+Everything is standard library. SSDP, SOAP, STUN, PCP, NAT-PMP and the
+authenticated wire format are implemented here, with no external dependencies.
+
+## Quick start
+
+```bash
+go run ./cmd/vapora nat      # classify this network
+go run ./cmd/vapora diag     # find out which of your routers filters, and how
+go run ./cmd/vapora punch    # print an invite and wait for a peer
+```
+
+## How the channel opens
+
+One side prints an invite that is itself a runnable command:
+
+```
+$ go run ./cmd/vapora punch
+
+send this to your friend, it is a runnable command:
+
+    vapora punch 203.0.113.7:41001/BXFWOBXKGS547XF2WOKVG6JYDI
+
+waiting for them...
+```
+
+The other side runs exactly that line and both ends punch towards each other.
+There is no server and no host/client role: whoever starts first retries until
+the other shows up. While waiting, the socket keeps its NAT binding warm, since
+an idle mapping expires long before a person reads a message and reacts.
+
+### The secret in the invite
+
+The waiting socket accepts packets from any source, which is what lets an
+unannounced peer in. The random secret appended to the endpoint is what keeps
+that from being an open door: it is the session key, and a frame that does not
+authenticate under it is dropped without ever becoming the peer.
+
+It is not a password compared on arrival. Two AES-256-GCM keys are derived from
+it with HKDF-SHA256, one per direction, so every frame is encrypted and
+authenticated, no nonce is ever reused under a key, and replays are rejected by
+an IPsec style sliding window. The secret is 128 random bits from `crypto/rand`;
+being full entropy already, it needs a KDF, not password stretching.
+
+**The invite is a credential.** It belongs on a channel you trust, and both
+sides must carry the same one or they never see each other.
+
+### What anonymous means here
+
+No accounts, no registration, and no server that learns who talks to whom.
+
+It does **not** mean your peer cannot see you: on a direct channel the packets
+travel from your address to theirs, so each end learns the other's IP. That is
+what direct means. Hiding that would require relaying every packet through a
+third party, which is the opposite of what this tool does.
+
+## Whether one link is enough
+
+That depends on the **filtering** behaviour of the waiting side, which `nat`
+reports and `diag` attributes to a specific router.
+
+- `endpoint-independent (full cone)` — the peer's first packet gets in and the
+  invite alone connects the two.
+- anything stricter — that packet is dropped, because the waiting side never
+  contacted that endpoint. The joining side also prints its own invite; pasting
+  it back into the waiting terminal completes the handshake. Pasting works at
+  any moment while it waits, and the whole line can be pasted as is.
+
+`diag` exists because a STUN report only describes the whole chain end to end.
+Behind two cascaded NATs it cannot say which one is restrictive, so `diag` runs
+an experiment instead of a measurement: it installs a UPnP mapping for one
+socket, re-measures it against an unmapped control socket, and checks five
+confounders before reaching a verdict.
+
+The mapping matters because the UPnP-IGD spec (WANIPConnection v2, §2.3.17)
+gives a wildcard `RemoteHost` mapping endpoint-independent filtering. If the
+filtering opens for the mapped socket and not for the control, the router that
+speaks UPnP was the one dropping packets, and it can be told to stop. If nothing
+changes, the restriction lives upstream, out of reach.
+
+## Port control protocols
+
+`diag` probes each gateway for all three mechanisms, because a router that
+refuses one often answers another:
+
+- **UPnP-IGD** over SSDP and SOAP, including cascaded double NAT traversal.
+- **PCP** (RFC 6887). A `MAP` without a FILTER option is endpoint-independent by
+  the spec's own wording, which is stronger than UPnP's.
+- **NAT-PMP** (RFC 6886), detected from the version 0 rejection a legacy gateway
+  gives to a PCP request.
+
+## Layout
+
+```
+cmd/vapora      CLI: nat, diag, punch, probe, serve, connect
+pkg/punch       hole punching, invite secrets, the authenticated wire format
+pkg/stun        STUN (RFC 5389) and NAT behaviour discovery (RFC 5780)
+pkg/pcp         PCP (RFC 6887) and NAT-PMP (RFC 6886)
+pkg/upnp        SSDP, device description, SOAP, port mappings, NAT chain
+pkg/diag        the differential experiment that attributes filtering
+pkg/text        sanitises what arrives from the network before a terminal sees it
+internal/chat   the TCP chat used as the traffic probe for the UPnP path
+```
+
+Everything under `pkg/` is importable and is where the contract lives.
+`internal/chat` is demo scaffolding and carries no promises.
+
+## Development
+
+```bash
+go test ./... -race
+go vet ./...
+```
