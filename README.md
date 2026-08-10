@@ -113,6 +113,10 @@ While the other side is writing, a courier runs in the footer and the line reads
 first keystroke and withdrawn when the line is sent or two seconds pass with no
 typing.
 
+The conversation stacks upward from the input line and keeps its whole history:
+`pgup` and `pgdn` walk it, a marker shows how much is hidden above and below,
+and sending a line snaps back to the newest one.
+
 The UI needs a terminal. Piped input, a CI job or a terminal that refuses raw
 mode all fall back to plain lines automatically, and `-plain` forces it.
 

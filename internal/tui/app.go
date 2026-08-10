@@ -97,6 +97,7 @@ func (c *Chat) Message(payload string) {
 	c.update(func(s *State) {
 		s.PeerTyping = false
 		s.Messages = append(s.Messages, Message{Speaker: s.Peer, Body: payload})
+		keepPosition(s)
 	})
 }
 
@@ -107,6 +108,7 @@ func (c *Chat) Typing(active bool) {
 func (c *Chat) System(body string) {
 	c.update(func(s *State) {
 		s.Messages = append(s.Messages, Message{Speaker: "--", Body: body, System: true})
+		keepPosition(s)
 	})
 }
 
@@ -150,6 +152,10 @@ func (c *Chat) Run(ctx context.Context) error {
 				}
 				break
 			}
+			if key.Kind == KeyPageUp || key.Kind == KeyPageDown {
+				c.scroll(key.Kind)
+				break
+			}
 			c.editor.Apply(key)
 			lastKeystroke = time.Now()
 			if !typingSent && !c.editor.Empty() {
@@ -177,10 +183,48 @@ func (c *Chat) Run(ctx context.Context) error {
 	}
 }
 
+// scroll moves the history window by half a screen, which keeps a couple of
+// lines of overlap so the eye can follow where it landed.
+func (c *Chat) scroll(kind KeyKind) {
+	width, height := c.screen.Size()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	step := (height - headerHeight - footerHeight) / 2
+	if step < 1 {
+		step = 1
+	}
+	if kind == KeyPageUp {
+		c.state.Scroll += step
+	} else {
+		c.state.Scroll -= step
+	}
+
+	if maximum := MaxScroll(c.state, width, height); c.state.Scroll > maximum {
+		c.state.Scroll = maximum
+	}
+	if c.state.Scroll < 0 {
+		c.state.Scroll = 0
+	}
+}
+
+// keepPosition holds the view still when a line arrives while the user is
+// reading history. The estimate is one line per message, so a long wrapped
+// message shifts the view slightly; scrolling back to the bottom resets it.
+func keepPosition(s *State) {
+	if s.Scroll > 0 {
+		s.Scroll++
+	}
+}
+
 func (c *Chat) appendMine(line string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Messages = append(c.state.Messages, Message{Speaker: c.state.Me, Body: line, Mine: true})
+	// Sending is an act of joining the conversation, so it always returns the
+	// view to the newest line.
+	c.state.Scroll = 0
 }
 
 func (c *Chat) notifyTyping(active bool) {

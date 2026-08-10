@@ -13,6 +13,8 @@ const (
 	KeyRight
 	KeyHome
 	KeyEnd
+	KeyPageUp
+	KeyPageDown
 	KeyInterrupt
 	KeyUnknown
 )
@@ -73,6 +75,19 @@ func decodeEscape(buf []byte) (Key, int) {
 		return Key{Kind: KeyHome}, 3
 	case 'F':
 		return Key{Kind: KeyEnd}, 3
+	case '5', '6':
+		// Page up and down arrive as CSI 5~ and CSI 6~, so the tilde has to be
+		// there before either can be claimed.
+		if len(buf) < 4 {
+			return Key{Kind: KeyUnknown}, 0
+		}
+		if buf[3] != '~' {
+			break
+		}
+		if buf[2] == '5' {
+			return Key{Kind: KeyPageUp}, 4
+		}
+		return Key{Kind: KeyPageDown}, 4
 	}
 
 	// Anything else is a sequence this UI does not act on; swallow it whole so

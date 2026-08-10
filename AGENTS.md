@@ -64,6 +64,13 @@ a signature is a change to the contract.
   takes a `State` and fills a `Screen`; only `Screen.Flush` touches the tty.
   That split is what lets frames be asserted on in tests, and it is the reason
   every layout bug so far was caught by a test rather than by eye.
+- **Pixel art is drawn with half blocks, never whole ones.** A terminal cell is
+  about twice as tall as it is wide, so `█` is a rectangle; `▀` with a
+  foreground and a background is a square pixel. The first wordmark was
+  unreadable for exactly this reason.
+- **Nothing but the UI writes to the terminal while it runs.** A `fmt.Print`
+  buried in a package lands in the middle of whatever was drawn. Report through
+  the observer instead.
 - **Ranging a string steps by bytes.** Every block glyph the sprites use is
   three of them, so pixel art must range `[]rune(line)`.
 - **No real addresses in the repository.** Use RFC 5737 documentation ranges

@@ -34,13 +34,16 @@ type State struct {
 	Messages    []Message
 	Input       string
 	Cursor      int
+	Scroll      int
 	PeerTyping  bool
 	Frame       int
 	ClosedError string
 }
 
 const (
-	headerHeight = 7
+	// headerHeight fits the wordmark, which is seven pixels and therefore four
+	// rows tall, plus a row of padding and the rule.
+	headerHeight = 6
 	// footerHeight covers the rule, the three rows the courier sprite needs,
 	// the input line and the hint. A sprite taller than its band would paint
 	// over the hint, which is exactly what it did before this was sized.
@@ -71,7 +74,7 @@ func Draw(screen *Screen, state State) {
 
 func drawHeader(screen *Screen, state State, width int) {
 	screen.Fill(0, 0, width, headerHeight, Black)
-	drawBanner(screen, 2, 1, Gold)
+	drawBanner(screen, 2, 2, Gold)
 
 	if state.Phase == PhaseChat {
 		badge := fmt.Sprintf("● %s", state.Me)
@@ -121,27 +124,71 @@ func drawLoading(screen *Screen, state State, width, height int) {
 
 func drawMessages(screen *Screen, state State, width, height int) {
 	top := headerHeight
-	bottom := height - footerHeight
-	area := bottom - top
+	area := height - footerHeight - top
 	if area < 1 {
 		return
 	}
 
 	lines := wrapMessages(state, width-4)
-	if len(lines) > area {
-		lines = lines[len(lines)-area:]
-	}
+	visible, scroll, more := window(lines, area, state.Scroll)
 
-	for i, line := range lines {
+	// A conversation reads upward from the input line, so the newest line sits
+	// against the footer and an empty chat leaves the gap above, not below.
+	offset := area - len(visible)
+	for i, line := range visible {
+		y := top + offset + i
 		x := 2
 		if line.speaker != "" {
 			tag := fmt.Sprintf("%-10s", line.speaker)
-			x += screen.Text(x, top+i, tag, line.color, Navy)
+			x += screen.Text(x, y, tag, line.color, Navy)
 		} else {
 			x += 10
 		}
-		screen.Text(x, top+i, line.body, line.bodyColor, Navy)
+		screen.Text(x, y, line.body, line.bodyColor, Navy)
 	}
+
+	if scroll > 0 || more > 0 {
+		marker := fmt.Sprintf("▲ %d more", more+scroll)
+		if scroll > 0 {
+			marker = fmt.Sprintf("▼ %d below  ▲ %d above", scroll, more)
+		}
+		screen.Text(width-TextWidth(marker)-2, top, marker, Gold, Navy)
+	}
+}
+
+// window picks the visible slice and reports how many lines fell off each end,
+// clamping a scroll offset that a resize may have left out of range.
+func window(lines []renderedLine, area, scroll int) ([]renderedLine, int, int) {
+	maxScroll := len(lines) - area
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+
+	end := len(lines) - scroll
+	start := end - area
+	if start < 0 {
+		start = 0
+	}
+	return lines[start:end], scroll, start
+}
+
+// MaxScroll is how far back a state can be scrolled at a given size, which the
+// input loop needs to stop the offset from running past the history.
+func MaxScroll(state State, width, height int) int {
+	area := height - footerHeight - headerHeight
+	if area < 1 {
+		return 0
+	}
+	if maximum := len(wrapMessages(state, width-4)) - area; maximum > 0 {
+		return maximum
+	}
+	return 0
 }
 
 type renderedLine struct {
@@ -231,7 +278,7 @@ func drawFooter(screen *Screen, state State, width, height int) {
 	cursorX := 2 + TextWidth(prompt) + TextWidth(string(runes[:cursor]))
 	drawCursor(screen, cursorX, height-2)
 
-	hint := "enter sends  ·  ctrl+c quits"
+	hint := "enter sends  ·  pgup/pgdn scrolls  ·  ctrl+c quits"
 	screen.Text(width-TextWidth(hint)-2, height-1, hint, DarkGray, Black)
 }
 

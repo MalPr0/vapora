@@ -182,26 +182,79 @@ var flagSprite = Sprite{
 	},
 }
 
-// banner is the wordmark, drawn in the same half block pixels as the sprites so
-// the whole screen reads as one console.
-var bannerRows = []string{
-	"█ █ ███ ███ ███ ███ ███",
-	"█ █ █ █ █ █ █ █ █ █ █ █",
-	"█ █ ███ ███ █ █ ███ ███",
-	"███ █ █ █   █ █ █ █ █ █",
-	" █  █ █ █   ███ █ █ █ █",
+// glyphs is a five by seven font. A cell is about twice as tall as it is wide,
+// so a wordmark built from whole block characters comes out stretched and
+// unreadable; drawing it as half block pixels like the sprites keeps the
+// letterforms square.
+var glyphs = map[rune][]string{
+	'V': {
+		"X   X",
+		"X   X",
+		"X   X",
+		"X   X",
+		"X   X",
+		" X X ",
+		"  X  ",
+	},
+	'A': {
+		"  X  ",
+		" X X ",
+		"X   X",
+		"X   X",
+		"XXXXX",
+		"X   X",
+		"X   X",
+	},
+	'P': {
+		"XXXX ",
+		"X   X",
+		"X   X",
+		"XXXX ",
+		"X    ",
+		"X    ",
+		"X    ",
+	},
+	'O': {
+		" XXX ",
+		"X   X",
+		"X   X",
+		"X   X",
+		"X   X",
+		"X   X",
+		" XXX ",
+	},
+	'R': {
+		"XXXX ",
+		"X   X",
+		"X   X",
+		"XXXX ",
+		"X  X ",
+		"X   X",
+		"X   X",
+	},
+}
+
+const wordmark = "VAPORA"
+
+// glyphHeight is in pixels; on screen it takes half as many rows.
+const glyphHeight = 7
+
+// BannerWidth is how many columns the wordmark needs, so a caller can decide
+// whether it fits before drawing it.
+func BannerWidth() int {
+	return len(wordmark)*6 - 1
 }
 
 func drawBanner(screen *Screen, x, y int, color int) {
-	for row, line := range bannerRows {
-		// Ranging the string directly would step by bytes, and a block glyph is
-		// three of them, which stretches the wordmark to nonsense.
-		for column, current := range []rune(line) {
-			if current == ' ' {
-				continue
-			}
-			screen.Set(x+column, y+row, '█', color, Black)
+	cursor := x
+	for _, letter := range wordmark {
+		rows, ok := glyphs[letter]
+		if !ok {
+			cursor += 6
+			continue
 		}
+		Sprite{Rows: rows, Palette: map[rune]int{'X': color}}.Draw(screen, cursor, y)
+		cursor += 6
 	}
 }
 

@@ -52,7 +52,8 @@ func TestDecodeKeyWaitsForPartialSequences(t *testing.T) {
 // An unhandled sequence has to be swallowed whole, or its tail lands in the
 // text as stray letters.
 func TestDecodeKeySwallowsUnknownSequences(t *testing.T) {
-	key, consumed := DecodeKey([]byte("\x1b[5~rest"))
+	// CSI 3~ is Delete, which this editor does not act on.
+	key, consumed := DecodeKey([]byte("\x1b[3~rest"))
 	if key.Kind != KeyUnknown || consumed != 4 {
 		t.Fatalf("got kind %d consumed %d", key.Kind, consumed)
 	}

@@ -110,8 +110,9 @@ func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 		}
 		if peer == nil {
 			// The invite went one way only and their packet still got in.
+			// Announcing it is the caller's business: a session that writes to
+			// a stream of its own lands in the middle of whatever a UI drew.
 			s.SetPeer(from)
-			fmt.Fprintf(s.output, "peer arrived from %s\n", from)
 		}
 
 		// A punch proves the peer reaches us; the ack closes the other way.
