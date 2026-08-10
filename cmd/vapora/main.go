@@ -15,6 +15,11 @@ import (
 	"github.com/MalPr0/vapora/pkg/upnp"
 )
 
+// version is stamped at build time with -ldflags "-X main.version=...". Two
+// peers running different builds have to be able to say so out loud, because a
+// wire format mismatch otherwise just looks like a peer that never answers.
+var version = "dev"
+
 const (
 	discoveryTimeout = 3 * time.Second
 	cleanupTimeout   = 10 * time.Second
@@ -55,6 +60,9 @@ func run(args []string) error {
 		return runPunch(args)
 	case "diag":
 		return runDiag(args)
+	case "version", "-v", "--version":
+		fmt.Printf("vapora %s\n", version)
+		return nil
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -74,6 +82,7 @@ func printUsage() {
   vapora probe                 discover the gateway and show its external IP
   vapora serve [-port 40404]   map a port via UPnP and host a TCP chat on it
   vapora connect <host:port>   join a chat hosted by someone else
+  vapora version               print the build version
 
 punch flags:
   -port       local UDP port, 0 lets the OS choose

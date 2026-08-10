@@ -16,6 +16,30 @@ go run ./cmd/vapora diag     # find out which of your routers filters, and how
 go run ./cmd/vapora punch    # print an invite and wait for a peer
 ```
 
+## Install
+
+Every merge to `main` publishes a release with static binaries for macOS, Linux
+and Windows. Both peers need one, so handing the other side a link to the
+release page is usually easier than asking them to install Go.
+
+```bash
+tar -xzf vapora_<version>_<os>_<arch>.tar.gz
+./vapora version
+```
+
+`SHA256SUMS` ships with each release. Verify before running a binary you did not
+build: this is a tool that opens a port and talks to strangers.
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Or build it yourself, which needs nothing but a Go toolchain:
+
+```bash
+go build ./cmd/vapora
+```
+
 ## How the channel opens
 
 One side prints an invite that is itself a runnable command:

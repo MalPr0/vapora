@@ -1,5 +1,6 @@
 # Build output
 /vapora
+/build/
 /dist/
 *.exe
 *.test
