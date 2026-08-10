@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/internal/chat"
+	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/upnp"
 )
 
@@ -80,15 +81,15 @@ func printUsage() {
   vapora punch                 print an invite and wait for a friend to join
   vapora punch <host:port/key> join with the invite a friend sent you
   vapora probe                 discover the gateway and show its external IP
-  vapora serve [-port 40404]   map a port via UPnP and host a TCP chat on it
-  vapora connect <host:port>   join a chat hosted by someone else
+  vapora serve [-port 40404]      map a port via UPnP and host an authenticated chat
+  vapora connect <host:port/key>  join a chat with the invite its host printed
   vapora version               print the build version
 
 punch flags:
   -port       local UDP port, 0 lets the OS choose
   -timeout    how long to keep punching before giving up (default 3m)
   -keepalive  how often to refresh the NAT binding while waiting (default 25s)
-  -insecure   drop the invite secret and run the session unauthenticated
+  -plain      skip the full screen UI and use plain lines
 
 diag flags:
   -only      run just one part: pcp or filter
@@ -141,7 +142,14 @@ func runServe(args []string) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 
-	server := chat.NewServer(os.Stdout)
+	// The mapped port is reachable from the internet, so joining takes the
+	// session key exactly like the punch channel does.
+	secret, err := punch.NewSecret()
+	if err != nil {
+		return err
+	}
+
+	server := chat.NewServer(os.Stdout, secret)
 	listener, err := server.Listen(ctx, fmt.Sprintf(":%d", opts.port))
 	if err != nil {
 		return err
@@ -155,10 +163,11 @@ func runServe(args []string) error {
 		defer release()
 	}
 
-	fmt.Printf("chat server listening on port %d, type to broadcast, ctrl+c to quit\n", opts.port)
-	go chat.Pump(os.Stdin, broadcastWriter{server: server})
+	fmt.Printf("\nchat listening on port %d. Send this to your friend:\n\n    vapora connect <your-ip>:%d/%s\n\n",
+		opts.port, opts.port, secret)
+	fmt.Println("type to talk, ctrl+c to quit")
 
-	return server.Serve(ctx, listener)
+	return server.Serve(ctx, listener, os.Stdin)
 }
 
 func runConnect(args []string) error {
@@ -173,9 +182,16 @@ func runConnect(args []string) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 
-	address := flags.Arg(0)
-	fmt.Printf("connecting to %s\n", address)
-	return chat.Dial(ctx, address, os.Stdin, os.Stdout)
+	invite, err := punch.ParseInvite(flags.Arg(0))
+	if err != nil {
+		return err
+	}
+	if len(invite.Secret) == 0 {
+		return errors.New("that invite carries no secret, and this chat does not accept unauthenticated peers")
+	}
+
+	fmt.Printf("connecting to %s\n", invite.Endpoint)
+	return chat.Dial(ctx, invite.Endpoint.String(), invite.Secret, os.Stdin, os.Stdout)
 }
 
 func parseServeOptions(args []string) (options, error) {
@@ -287,13 +303,4 @@ func formatLease(lease time.Duration) string {
 
 func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-}
-
-type broadcastWriter struct {
-	server *chat.Server
-}
-
-func (w broadcastWriter) Write(payload []byte) (int, error) {
-	w.server.Broadcast(fmt.Sprintf("<host> %s", strings.TrimRight(string(payload), "\n")), nil)
-	return len(payload), nil
 }

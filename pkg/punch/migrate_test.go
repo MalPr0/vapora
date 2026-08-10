@@ -27,7 +27,7 @@ func TestPeerIsFollowedToANewAddress(t *testing.T) {
 	defer newAddr.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session := NewSession(home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, oldAddr))
 
@@ -66,7 +66,7 @@ func TestAHealthyPathDoesNotFollow(t *testing.T) {
 	defer stranger.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session := NewSession(home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, peer))
 
@@ -131,7 +131,7 @@ func TestSniffClaimsForeignDatagrams(t *testing.T) {
 	defer other.Close()
 
 	claimed := make(chan []byte, 4)
-	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session := NewSession(home, plainCodec{}, &syncBuffer{})
 	session.SetPeer(localAddr(t, other))
 	session.Sniff(func(payload []byte, _ *net.UDPAddr) bool {
 		if len(payload) > 0 && payload[0] == 0xEE {
@@ -166,7 +166,7 @@ func TestAQuietPathIsPunchedAgain(t *testing.T) {
 	defer home.Close()
 	defer peer.Close()
 
-	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session := NewSession(home, plainCodec{}, &syncBuffer{})
 	session.SetPeer(localAddr(t, peer))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -196,7 +196,7 @@ func TestSniffAlsoWorksWhileWaiting(t *testing.T) {
 	defer other.Close()
 
 	claimed := make(chan struct{}, 4)
-	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session := NewSession(home, plainCodec{}, &syncBuffer{})
 	session.SetPeer(localAddr(t, other))
 	session.Sniff(func(payload []byte, _ *net.UDPAddr) bool {
 		if len(payload) > 0 && payload[0] == 0xEE {

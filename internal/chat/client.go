@@ -9,14 +9,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/text"
 )
 
 const dialTimeout = 10 * time.Second
 
-// Dial connects to a chat server and pumps stdin and the socket into each other
-// until either side closes.
-func Dial(ctx context.Context, address string, input io.Reader, output io.Writer) error {
+// Dial joins a hosted chat. The secret comes from the invite, so a wrong one
+// fails at the first frame rather than letting a stranger talk.
+func Dial(ctx context.Context, address string, secret punch.Secret, input io.Reader, output io.Writer) error {
+	codec, err := punch.NewSecretCodec(secret, punch.RoleJoiner)
+	if err != nil {
+		return err
+	}
+
 	dialer := net.Dialer{Timeout: dialTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -24,10 +30,12 @@ func Dial(ctx context.Context, address string, input io.Reader, output io.Writer
 	}
 	defer conn.Close()
 
+	peer := newStream(conn, codec)
+
 	var quitting atomic.Bool
 	closeSession := func() {
 		quitting.Store(true)
-		_ = conn.Close()
+		_ = peer.Close()
 	}
 
 	go func() {
@@ -38,24 +46,23 @@ func Dial(ctx context.Context, address string, input io.Reader, output io.Writer
 	// Closing stdin ends the session, which keeps the client usable both
 	// interactively (ctrl+d) and from a pipe.
 	go func() {
-		Pump(input, conn)
+		scanner := bufio.NewScanner(input)
+		for scanner.Scan() {
+			if err := peer.WriteLine(scanner.Text()); err != nil {
+				break
+			}
+		}
 		closeSession()
 	}()
 
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		fmt.Fprintln(output, text.Safe(scanner.Text()))
-	}
-	if err := scanner.Err(); err != nil && !quitting.Load() {
-		return fmt.Errorf("chat: connection to %s dropped: %w", address, err)
-	}
-	return nil
-}
-
-// Pump forwards every line read from input into the writer.
-func Pump(input io.Reader, target io.Writer) {
-	scanner := bufio.NewScanner(input)
-	for scanner.Scan() {
-		fmt.Fprintf(target, "%s\n", scanner.Text())
+	for {
+		line, err := peer.ReadLine()
+		if err != nil {
+			if quitting.Load() || err == io.EOF || ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("chat: connection to %s dropped: %w", address, err)
+		}
+		fmt.Fprintln(output, text.Safe(line))
 	}
 }

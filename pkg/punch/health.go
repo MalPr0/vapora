@@ -2,7 +2,7 @@ package punch
 
 import (
 	"context"
-	"strconv"
+	"encoding/binary"
 	"time"
 )
 
@@ -45,6 +45,10 @@ const (
 	// recoverInterval is the cadence once the path is degraded. Recovery is
 	// worth the extra packets; an idle path is not.
 	recoverInterval = time.Second
+	// maxRecoverInterval caps the backoff. A peer that never returns would
+	// otherwise be punched at once a second for as long as the window stays
+	// open, which is a lot of packets thrown at nobody.
+	maxRecoverInterval = 30 * time.Second
 )
 
 // Health is a snapshot of the path.
@@ -99,8 +103,10 @@ func (s *Session) pingLoop(ctx context.Context) {
 		// cadence would make every recovery wait out a full interval.
 		delay := pingInterval
 		if s.Health().Link != LinkAlive {
-			s.send(kindPunch, "")
-			delay = recoverInterval
+			s.send(kindPunch, pad())
+			delay = s.backoff()
+		} else {
+			s.resetBackoff()
 		}
 
 		select {
@@ -118,12 +124,28 @@ func (s *Session) sendPing() {
 	s.pingSentAt = time.Now()
 	s.mu.Unlock()
 
-	s.send(kindPing, strconv.FormatUint(seq, 10))
+	s.send(kindPing, sequencePayload(seq))
+}
+
+// sequencePayload puts the sequence in a fixed prefix and lets the padding vary
+// after it, so the number is readable without the frame having a tell-tale
+// length.
+func sequencePayload(seq uint64) string {
+	prefix := make([]byte, 8)
+	binary.BigEndian.PutUint64(prefix, seq)
+	return padded(prefix)
+}
+
+func readSequence(payload string) (uint64, bool) {
+	if len(payload) < 8 {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64([]byte(payload[:8])), true
 }
 
 func (s *Session) receivePong(payload string) {
-	seq, err := strconv.ParseUint(payload, 10, 64)
-	if err != nil {
+	seq, ok := readSequence(payload)
+	if !ok {
 		return
 	}
 
@@ -134,4 +156,31 @@ func (s *Session) receivePong(payload string) {
 	if seq == s.pingSeq {
 		s.rtt = time.Since(s.pingSentAt)
 	}
+}
+
+// backoff widens the recovery cadence the longer a path stays down. The first
+// seconds after a path goes quiet are when it is most likely to be a pinhole
+// that expired, so those are probed hard; an hour later it is almost certainly
+// gone and hammering it helps nobody.
+func (s *Session) backoff() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.recoverDelay <= 0 {
+		s.recoverDelay = recoverInterval
+		return s.recoverDelay
+	}
+	if s.recoverDelay < maxRecoverInterval {
+		s.recoverDelay *= 2
+		if s.recoverDelay > maxRecoverInterval {
+			s.recoverDelay = maxRecoverInterval
+		}
+	}
+	return s.recoverDelay
+}
+
+func (s *Session) resetBackoff() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recoverDelay = 0
 }

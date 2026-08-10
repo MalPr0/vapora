@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
 )
 
-// pendingLimit bounds the outstanding transactions. Answers that never come
-// would otherwise accumulate for as long as the session lives.
-const pendingLimit = 16
+// pendingTTL bounds how long an unanswered request is remembered. Dropping the
+// whole table instead would throw away requests still legitimately in flight.
+const pendingTTL = 30 * time.Second
 
 // Watcher tracks the public endpoint of a socket it does not own. It writes on
 // its own, because writes to a UDP socket are safe from any goroutine, and is
@@ -27,6 +28,7 @@ type Watcher struct {
 	pending  map[[12]byte]time.Time
 	current  *net.UDPAddr
 	onChange func(previous, current *net.UDPAddr)
+	observed chan struct{}
 }
 
 func NewWatcher(servers []string, every time.Duration) *Watcher {
@@ -36,7 +38,12 @@ func NewWatcher(servers []string, every time.Duration) *Watcher {
 	if every <= 0 {
 		every = DefaultKeepalive
 	}
-	return &Watcher{servers: servers, every: every, pending: map[[12]byte]time.Time{}}
+	return &Watcher{
+		servers:  servers,
+		every:    every,
+		pending:  map[[12]byte]time.Time{},
+		observed: make(chan struct{}),
+	}
 }
 
 // OnChange fires when the observed endpoint differs from the last one seen. The
@@ -85,11 +92,14 @@ func (w *Watcher) probe(conn *net.UDPConn, server string) {
 		return
 	}
 
+	now := time.Now()
 	w.mu.Lock()
-	if len(w.pending) >= pendingLimit {
-		w.pending = map[[12]byte]time.Time{}
+	for id, sent := range w.pending {
+		if now.Sub(sent) > pendingTTL {
+			delete(w.pending, id)
+		}
 	}
-	w.pending[transactionID] = time.Now()
+	w.pending[transactionID] = now
 	w.mu.Unlock()
 
 	_, _ = conn.WriteToUDP(request, target)
@@ -125,12 +135,34 @@ func (w *Watcher) observe(mapped *net.UDPAddr) {
 	previous := w.current
 	w.current = mapped
 	handler := w.onChange
+	first := previous == nil
 	w.mu.Unlock()
 
-	if previous == nil || handler == nil || sameEndpoint(previous, mapped) {
+	if first {
+		close(w.observed)
+		return
+	}
+	if handler == nil || sameEndpoint(previous, mapped) {
 		return
 	}
 	handler(previous, mapped)
+}
+
+// Wait blocks until the first answer arrives. A caller that shares its socket
+// cannot query STUN directly, because the reader belongs to somebody else, so
+// this is how it learns the address to put on an invite.
+func (w *Watcher) Wait(ctx context.Context, timeout time.Duration) (*net.UDPAddr, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-w.observed:
+		return w.Endpoint(), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, fmt.Errorf("stun: no server answered within %s", timeout)
+	}
 }
 
 // responseTransaction reads the transaction id off a binding response without

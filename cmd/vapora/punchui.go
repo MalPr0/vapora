@@ -91,31 +91,25 @@ func linkState(link punch.Link) tui.LinkState {
 func connect(ctx context.Context, open *channel, chat *tui.Chat) error {
 	chat.SetStatus("looking up your public endpoint", 0.05)
 
-	endpoint, err := open.endpoint(ctx)
-	if err != nil {
-		return err
-	}
-
-	if open.role == punch.RoleJoiner {
-		chat.SetStatus("punching towards your friend", 0.2)
-		chat.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
-	} else {
-		chat.SetStatus("waiting for your friend to join", 0.2)
-		chat.SetInvite(open.inviteFor(endpoint))
-	}
-
-	go watchEndpoint(ctx, open, func(_, current *net.UDPAddr) {
+	open.watcher.OnChange(func(_, current *net.UDPAddr) {
 		chat.SetInvite(open.inviteFor(current))
 		chat.System(movedMessage(open, current))
 	})
 	go trackProgress(ctx, open, chat)
 
-	if err := open.session.Open(ctx, open.timeout); err != nil {
-		if errors.Is(err, punch.ErrPunchTimeout) {
-			return fmt.Errorf("%w: both sides have to run at once, and the secret has to match", err)
+	err := open.waitForPath(ctx, func(endpoint *net.UDPAddr) {
+		if open.role == punch.RoleJoiner {
+			chat.SetStatus("punching towards your friend", 0.2)
+			chat.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
+			return
 		}
+		chat.SetStatus("waiting for your friend to join", 0.2)
+		chat.SetInvite(open.inviteFor(endpoint))
+	})
+	if err != nil {
 		return err
 	}
+
 	chat.SetStatus("connected", 1)
 	return nil
 }

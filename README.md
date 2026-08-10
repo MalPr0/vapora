@@ -177,7 +177,14 @@ an IPsec style sliding window. The secret is 128 random bits from `crypto/rand`;
 being full entropy already, it needs a KDF, not password stretching.
 
 **The invite is a credential.** It belongs on a channel you trust, and both
-sides must carry the same one or they never see each other.
+sides must carry the same one or they never see each other. There is no
+unauthenticated mode: a socket reachable from the internet has no business
+running without the AEAD, and the secret costs nothing.
+
+Control frames carry random filler. AEAD hides what a frame says but not how
+long it is, and a ping with nothing to carry would be a fixed size arriving on a
+fixed cadence, which is a heartbeat visible to anyone counting bytes. Padding
+puts it inside the same size spread as the messages it travels among.
 
 ### What anonymous means here
 
@@ -187,6 +194,17 @@ It does **not** mean your peer cannot see you: on a direct channel the packets
 travel from your address to theirs, so each end learns the other's IP. That is
 what direct means. Hiding that would require relaying every packet through a
 third party, which is the opposite of what this tool does.
+
+## The UPnP path
+
+`serve` maps a port and hosts a chat on it; `connect` joins. That port is
+reachable from the internet, so the chat is authenticated and encrypted with the
+same session key mechanism the punch channel uses, and `serve` prints an invite
+exactly like `punch` does.
+
+It hosts one conversation at a time. That is not a limitation to work around:
+every peer would otherwise share one direction key, and two of them could
+collide on a nonce under it.
 
 ## Whether one link is enough
 

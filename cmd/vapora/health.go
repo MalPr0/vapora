@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/pkg/punch"
-	"github.com/MalPr0/vapora/pkg/stun"
 )
 
 const healthPoll = time.Second
@@ -53,16 +52,6 @@ func watchPath(ctx context.Context, open *channel, report func(Recovery)) {
 			}
 		}
 	}
-}
-
-// watchEndpoint keeps the socket's public address under observation and hands
-// the answers to the watcher through the session, which owns the only reader.
-func watchEndpoint(ctx context.Context, open *channel, moved func(previous, current *net.UDPAddr)) {
-	watcher := stun.NewWatcher(stun.DefaultServers, open.keepalive)
-	watcher.OnChange(moved)
-	open.session.Sniff(watcher.Handle)
-
-	_ = watcher.Run(ctx, open.conn)
 }
 
 func recoveryMessage(recovery Recovery) string {

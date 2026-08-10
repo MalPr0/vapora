@@ -32,12 +32,13 @@ type Session struct {
 	pending  []string
 	observer Observer
 
-	lastHeard  time.Time
-	rtt        time.Duration
-	pingSeq    uint64
-	pingSentAt time.Time
-	moves      int
-	sniff      func(payload []byte, from *net.UDPAddr) bool
+	lastHeard    time.Time
+	rtt          time.Duration
+	pingSeq      uint64
+	pingSentAt   time.Time
+	recoverDelay time.Duration
+	moves        int
+	sniff        func(payload []byte, from *net.UDPAddr) bool
 }
 
 func NewSession(conn *net.UDPConn, codec Codec, output io.Writer) *Session {
@@ -59,11 +60,11 @@ func (s *Session) events() Observer {
 
 // SetTyping tells the peer whether a line is in progress here.
 func (s *Session) SetTyping(active bool) {
-	payload := ""
+	flag := byte('0')
 	if active {
-		payload = "1"
+		flag = '1'
 	}
-	s.send(kindTyping, payload)
+	s.send(kindTyping, padded([]byte{flag}))
 }
 
 func (s *Session) SetPeer(peer *net.UDPAddr) {
@@ -187,14 +188,18 @@ func (s *Session) Run(ctx context.Context) error {
 		case kindMessage:
 			s.events().Message(payload)
 		case kindTyping:
-			s.events().Typing(payload != "")
+			s.events().Typing(len(payload) > 0 && payload[0] == '1')
 		case kindPing:
-			s.send(kindPong, payload)
+			// The pong echoes the sequence but pads independently, so a reply
+			// is not recognisable by matching the size of what prompted it.
+			if seq, ok := readSequence(payload); ok {
+				s.send(kindPong, sequencePayload(seq))
+			}
 		case kindPong:
 			s.receivePong(payload)
 		case kindPunch:
 			// The peer is still handshaking because our ack was lost.
-			s.send(kindAck, "")
+			s.send(kindAck, pad())
 		}
 	}
 }
@@ -218,7 +223,7 @@ func (s *Session) punchLoop(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
-		s.send(kindPunch, "")
+		s.send(kindPunch, pad())
 		select {
 		case <-ctx.Done():
 			return

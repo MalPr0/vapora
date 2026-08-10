@@ -40,9 +40,7 @@ func (n Nicknames) Other(role Role) string {
 	return n.For(role.other())
 }
 
-// Nicknames derives the pair. A secret with no entropy behind it still yields a
-// usable pair, which keeps the unauthenticated mode from having to special case
-// the display.
+// Nicknames derives the pair.
 func (s Secret) Nicknames() Nicknames {
 	first := s.pick(0)
 	second := s.pick(1)
@@ -55,12 +53,7 @@ func (s Secret) Nicknames() Nicknames {
 }
 
 func (s Secret) pick(slot int) string {
-	seed := s
-	if len(seed) == 0 {
-		seed = Secret("vapora unauthenticated")
-	}
-
-	key, err := hkdf.Key(sha256.New, seed, nil, nicknameInfo, 8)
+	key, err := hkdf.Key(sha256.New, s, nil, nicknameInfo, 8)
 	if err != nil {
 		return animals[slot%len(animals)]
 	}

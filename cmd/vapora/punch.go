@@ -25,10 +25,11 @@ const pasteHint = 12 * time.Second
 type channel struct {
 	conn      *net.UDPConn
 	session   *punch.Session
+	watcher   *stun.Watcher
 	secret    punch.Secret
 	role      punch.Role
 	nicknames punch.Nicknames
-	invite    punch.Invite
+	peer      *net.UDPAddr
 	timeout   time.Duration
 	keepalive time.Duration
 }
@@ -37,7 +38,6 @@ func runPunch(args []string) error {
 	flags := flag.NewFlagSet("punch", flag.ContinueOnError)
 	localPort := flags.Int("port", 0, "local UDP port, 0 lets the OS choose")
 	timeout := flags.Duration("timeout", 3*time.Minute, "how long to keep punching before giving up")
-	insecure := flags.Bool("insecure", false, "drop the invite secret and run the session unauthenticated")
 	keepalive := flags.Duration("keepalive", stun.DefaultKeepalive, "how often to refresh the NAT binding while waiting")
 	plain := flags.Bool("plain", false, "skip the full screen UI and use plain lines")
 	if err := flags.Parse(args); err != nil {
@@ -53,12 +53,12 @@ func runPunch(args []string) error {
 	}
 	defer conn.Close()
 
-	secret, peer, role, err := resolveRole(flags.Args(), *insecure)
+	secret, peer, role, err := resolveRole(flags.Args())
 	if err != nil {
 		return err
 	}
 
-	codec, err := buildCodec(secret, role)
+	codec, err := punch.NewSecretCodec(secret, role)
 	if err != nil {
 		return err
 	}
@@ -66,16 +66,23 @@ func runPunch(args []string) error {
 	open := &channel{
 		conn:      conn,
 		session:   punch.NewSession(conn, codec, os.Stdout),
+		watcher:   stun.NewWatcher(stun.DefaultServers, *keepalive),
 		secret:    secret,
 		role:      role,
 		nicknames: secret.Nicknames(),
-		invite:    punch.Invite{Endpoint: peer, Secret: secret},
+		peer:      peer,
 		timeout:   *timeout,
 		keepalive: *keepalive,
 	}
 	if role == punch.RoleJoiner {
 		open.session.SetPeer(peer)
 	}
+
+	// The session owns the only reader of this socket from here on, and the
+	// endpoint watcher gets its answers through it. Querying STUN directly
+	// would mean a second reader, which on a UDP socket is a lottery over
+	// which one receives each datagram.
+	open.session.Sniff(open.watcher.Handle)
 
 	if !*plain && tui.IsTerminal(os.Stdin) {
 		if err := runPunchUI(ctx, open); err == nil || !errors.Is(err, errNoTerminal) {
@@ -89,21 +96,18 @@ func runPunch(args []string) error {
 
 // resolveRole decides the role from the command line: an invite as argument
 // means joining, its absence means minting one and waiting.
-func resolveRole(args []string, insecure bool) (punch.Secret, *net.UDPAddr, punch.Role, error) {
+func resolveRole(args []string) (punch.Secret, *net.UDPAddr, punch.Role, error) {
 	if len(args) > 0 {
 		invite, err := punch.ParseInvite(args[0])
 		if err != nil {
 			return nil, nil, "", err
 		}
-		if len(invite.Secret) == 0 && !insecure {
-			return nil, nil, "", errors.New("that invite carries no secret, re-run with -insecure if that is on purpose")
+		if len(invite.Secret) == 0 {
+			return nil, nil, "", errors.New("that invite carries no secret, so there is no session key and nothing to authenticate with")
 		}
 		return invite.Secret, invite.Endpoint, punch.RoleJoiner, nil
 	}
 
-	if insecure {
-		return nil, nil, punch.RoleInviter, nil
-	}
 	secret, err := punch.NewSecret()
 	if err != nil {
 		return nil, nil, "", err
@@ -111,16 +115,27 @@ func resolveRole(args []string, insecure bool) (punch.Secret, *net.UDPAddr, punc
 	return secret, nil, punch.RoleInviter, nil
 }
 
-func buildCodec(secret punch.Secret, role punch.Role) (punch.Codec, error) {
-	if len(secret) == 0 {
-		return punch.PlainCodec{}, nil
-	}
-	return punch.NewSecretCodec(secret, role)
-}
+// waitForPath starts the handshake and reports the public endpoint as soon as
+// the watcher learns it, so the invite can be shown while the punch runs.
+func (c *channel) waitForPath(ctx context.Context, invite func(*net.UDPAddr)) error {
+	go c.watcher.Run(ctx, c.conn)
 
-func (c *channel) endpoint(ctx context.Context) (*net.UDPAddr, error) {
-	endpoint, _, err := stun.FirstEndpoint(ctx, c.conn, stun.DefaultServers, stunTimeout)
-	return endpoint, err
+	opened := make(chan error, 1)
+	go func() { opened <- c.session.Open(ctx, c.timeout) }()
+
+	endpoint, err := c.watcher.Wait(ctx, stunTimeout)
+	if err != nil {
+		return err
+	}
+	invite(endpoint)
+
+	if err := <-opened; err != nil {
+		if errors.Is(err, punch.ErrPunchTimeout) {
+			return fmt.Errorf("%w: both sides have to run at once, and the secret has to match", err)
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *channel) inviteFor(endpoint *net.UDPAddr) string {

@@ -62,6 +62,12 @@ a signature is a change to the contract.
 - **The codec decides who the peer is, including where it is.** Following a
   peer to a new address is allowed only for a frame that authenticates, and
   only once the path has gone quiet.
+- **Anything reachable from the internet authenticates.** There is no
+  unauthenticated mode and `plainCodec` is unexported for that reason; it
+  exists so tests can exercise framing on its own.
+- **Control frames are padded.** AEAD hides content, not length. A frame whose
+  only content is its kind would have a length nobody else produces, on a
+  cadence that names it a heartbeat.
 - **Never print network bytes raw.** Route them through `text.Safe` first.
 - **Publish the endpoint STUN observed, never the one requested.** Behind double
   NAT the external port of a UPnP mapping lives on a private WAN address and is

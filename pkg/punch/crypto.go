@@ -152,14 +152,15 @@ func (c *SecretCodec) accept(prefix [prefixBytes]byte, counter uint64) bool {
 	return window.accept(counter)
 }
 
-// PlainCodec is the unauthenticated wire format, kept for sessions started
-// without a secret.
-type PlainCodec struct{}
+// plainCodec is the unauthenticated wire format. It is unexported on purpose:
+// a session reachable from the internet has no business running without the
+// AEAD, and this exists so tests can exercise the framing on its own.
+type plainCodec struct{}
 
-func (PlainCodec) Seal(kind byte, payload string) []byte {
+func (plainCodec) Seal(kind byte, payload string) []byte {
 	return encode(kind, payload)
 }
 
-func (PlainCodec) Open(wire []byte) (byte, string, error) {
+func (plainCodec) Open(wire []byte) (byte, string, error) {
 	return decode(wire)
 }

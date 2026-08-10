@@ -14,8 +14,8 @@ func TestPingAndPongNeverReachTheObserver(t *testing.T) {
 	defer right.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 8), messages: make(chan string, 8)}
-	leftSession := NewSession(left, PlainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, PlainCodec{}, &syncBuffer{})
+	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
+	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
 	rightSession.Observe(observer)
 
 	leftSession.SetPeer(localAddr(t, right))
@@ -53,8 +53,8 @@ func TestHealthReportsSilence(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession := NewSession(left, PlainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, PlainCodec{}, &syncBuffer{})
+	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
+	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -100,7 +100,7 @@ func TestHealthBeforeAPeerExists(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	if health := NewSession(conn, PlainCodec{}, &syncBuffer{}).Health(); health.Link != LinkAlive {
+	if health := NewSession(conn, plainCodec{}, &syncBuffer{}).Health(); health.Link != LinkAlive {
 		t.Fatalf("an unopened session reported %s", health.Link)
 	}
 }
@@ -111,8 +111,8 @@ func TestAnyFrameRefreshesLiveness(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession := NewSession(left, PlainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, PlainCodec{}, &syncBuffer{})
+	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
+	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -147,7 +147,7 @@ func TestStalePongIsIgnored(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	session := NewSession(conn, PlainCodec{}, &syncBuffer{})
+	session := NewSession(conn, plainCodec{}, &syncBuffer{})
 	// Health reports nothing without a peer, so the session has to look open
 	// for the measurement to be observable at all.
 	session.SetPeer(localAddr(t, conn))
@@ -157,18 +157,50 @@ func TestStalePongIsIgnored(t *testing.T) {
 	session.pingSentAt = time.Now()
 	session.mu.Unlock()
 
-	session.receivePong("3")
+	session.receivePong(sequencePayload(3))
 	if rtt := session.Health().RTT; rtt != 0 {
 		t.Fatalf("a stale pong measured %s", rtt)
 	}
 
-	session.receivePong("not a number")
+	session.receivePong("short")
 	if rtt := session.Health().RTT; rtt != 0 {
-		t.Fatalf("a malformed pong measured %s", rtt)
+		t.Fatalf("a truncated pong measured %s", rtt)
 	}
 
-	session.receivePong("5")
+	session.receivePong(sequencePayload(5))
 	if rtt := session.Health().RTT; rtt <= 0 {
 		t.Fatal("the outstanding ping measured nothing")
 	}
+}
+
+// AEAD hides what a frame says but not how long it is, so a control frame with
+// nothing to carry would arrive at a size nobody else produces, on a cadence
+// that names it a heartbeat.
+func TestControlFramesVaryInLength(t *testing.T) {
+	sizes := map[int]bool{}
+	for i := 0; i < 200; i++ {
+		sizes[len(pad())] = true
+	}
+	if len(sizes) < 50 {
+		t.Fatalf("200 control frames only took %d distinct lengths", len(sizes))
+	}
+
+	// The sequence still has to survive being padded.
+	for _, seq := range []uint64{0, 1, 7, 1 << 40} {
+		got, ok := readSequence(sequencePayload(seq))
+		if !ok || got != seq {
+			t.Fatalf("sequence %d came back as %d (ok=%v)", seq, got, ok)
+		}
+	}
+}
+
+// Two frames carrying the same thing must not look the same on the wire.
+func TestPaddingIsNotReused(t *testing.T) {
+	first := sequencePayload(1)
+	for i := 0; i < 20; i++ {
+		if sequencePayload(1) != first {
+			return
+		}
+	}
+	t.Fatal("the same sequence produced an identical frame every time")
 }

@@ -88,7 +88,7 @@ func TestOpenTimesOutWithoutPeer(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	session := NewSession(conn, PlainCodec{}, &syncBuffer{})
+	session := NewSession(conn, plainCodec{}, &syncBuffer{})
 	session.SetPeer(&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: freePort(t)})
 
 	if err := session.Open(context.Background(), 400*time.Millisecond); err != ErrPunchTimeout {
@@ -102,7 +102,7 @@ func TestOpenAndExchangeMessages(t *testing.T) {
 	defer right.Close()
 
 	leftOutput, rightOutput := &syncBuffer{}, &syncBuffer{}
-	leftSession, rightSession := NewSession(left, PlainCodec{}, leftOutput), NewSession(right, PlainCodec{}, rightOutput)
+	leftSession, rightSession := NewSession(left, plainCodec{}, leftOutput), NewSession(right, plainCodec{}, rightOutput)
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -127,8 +127,8 @@ func TestOpenLearnsPeerFromIncomingPacket(t *testing.T) {
 	defer waiting.Close()
 	defer joining.Close()
 
-	waitingSession := NewSession(waiting, PlainCodec{}, &syncBuffer{})
-	joiningSession := NewSession(joining, PlainCodec{}, &syncBuffer{})
+	waitingSession := NewSession(waiting, plainCodec{}, &syncBuffer{})
+	joiningSession := NewSession(joining, plainCodec{}, &syncBuffer{})
 	joiningSession.SetPeer(localAddr(t, waiting))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -146,7 +146,7 @@ func TestSetPeerWhileOpenIsPickedUp(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession, rightSession := NewSession(left, PlainCodec{}, &syncBuffer{}), NewSession(right, PlainCodec{}, &syncBuffer{})
+	leftSession, rightSession := NewSession(left, plainCodec{}, &syncBuffer{}), NewSession(right, plainCodec{}, &syncBuffer{})
 	rightSession.SetPeer(localAddr(t, left))
 
 	ctx, cancel := context.WithCancel(context.Background())
