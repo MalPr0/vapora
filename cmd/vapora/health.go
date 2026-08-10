@@ -22,6 +22,10 @@ type Recovery struct {
 	// link changing verdict. Without it a single recovery reads as two
 	// separate events, because it is both.
 	Moved bool
+	// Probes is traffic that reached the socket and could not authenticate.
+	Probes punch.Probes
+	// Probed marks the report that is about that traffic.
+	Probed bool
 }
 
 // watchPath reports only when the verdict changes. A live link is silent by
@@ -33,6 +37,7 @@ func watchPath(ctx context.Context, open *channel, report func(Recovery)) {
 
 	link := punch.LinkAlive
 	moves := 0
+	warned := 0
 
 	for {
 		select {
@@ -41,6 +46,7 @@ func watchPath(ctx context.Context, open *channel, report func(Recovery)) {
 		case <-ticker.C:
 			health := open.session.Health()
 			current := open.session.Moves()
+			probes := open.session.Probes()
 
 			if current != moves {
 				moves = current
@@ -50,13 +56,38 @@ func watchPath(ctx context.Context, open *channel, report func(Recovery)) {
 				link = health.Link
 				report(Recovery{Health: health, Moves: current})
 			}
+			// Doubling keeps a sustained scan from filling the conversation
+			// with its own noise while still saying it is getting worse.
+			if probes.Count >= nextProbeWarning(warned) {
+				warned = probes.Count
+				report(Recovery{Health: health, Probes: probes, Probed: true})
+			}
 		}
 	}
 }
 
+// nextProbeWarning is the count at which the next warning is worth printing.
+func nextProbeWarning(warned int) int {
+	if warned == 0 {
+		return 1
+	}
+	return warned * 2
+}
+
 func recoveryMessage(recovery Recovery) string {
+	if recovery.Probed {
+		return fmt.Sprintf(
+			"%d packets from %d address(es) reached this port and could not authenticate. "+
+				"Nothing was answered, so they learned nothing, but somebody knows this address: "+
+				"treat the invite as public and start a new session if that is a surprise",
+			recovery.Probes.Count, recovery.Probes.Sources)
+	}
 	if recovery.Moved {
 		return "your friend moved to a new address and the path followed them"
+	}
+
+	if recovery.Health.Departed {
+		return "your friend left"
 	}
 
 	switch recovery.Health.Link {

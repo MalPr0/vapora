@@ -23,10 +23,19 @@ func SafeLimit(line string, max int) string {
 	var safe strings.Builder
 	safe.Grow(len(line))
 
+	// The marker has to fit inside the limit, not after it: anything this
+	// produces has to satisfy Valid, or a line would be sanitised on the way
+	// out and rejected on the way in.
+	const marker = "..."
+	body := max - len(marker)
+	if body < 0 {
+		body = 0
+	}
+
 	rendered := 0
 	for _, current := range line {
-		if rendered >= max {
-			safe.WriteString("...")
+		if rendered >= body {
+			safe.WriteString(marker)
 			break
 		}
 		replacement, keep := sanitise(current)
@@ -67,4 +76,16 @@ func sanitise(current rune) (rune, bool) {
 	default:
 		return current, true
 	}
+}
+
+// Valid reports whether a string is the kind of text this protocol carries.
+// The definition is exactly that sanitising it changes nothing: well formed
+// UTF-8, no sequence a terminal would act on, and short enough to render.
+//
+// It exists so the wire can be checked rather than only the screen. Sanitising
+// on the way out and validating on the way in means a frame carrying anything
+// else is not a rendering problem to paper over, it is a peer that is not this
+// program.
+func Valid(value string) bool {
+	return len([]rune(value)) <= MaxRendered && Safe(value) == value
 }

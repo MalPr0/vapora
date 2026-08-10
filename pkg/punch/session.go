@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/MalPr0/vapora/pkg/text"
 )
 
 const (
@@ -38,6 +40,8 @@ type Session struct {
 	pingSentAt   time.Time
 	recoverDelay time.Duration
 	moves        int
+	departed     bool
+	probes       probeCount
 	sniff        func(payload []byte, from *net.UDPAddr) bool
 }
 
@@ -161,8 +165,20 @@ func (s *Session) Run(ctx context.Context) error {
 	s.heard()
 	go s.pingLoop(ctx)
 
+	// Cancelling a context does not interrupt a blocked read, and a peer that
+	// keeps pinging keeps this loop busy enough that it would never look. A
+	// deadline in the past is what turns the cancellation into a wakeup.
+	go func() {
+		<-ctx.Done()
+		_ = s.conn.SetReadDeadline(time.Now())
+	}()
+
 	buffer := make([]byte, readBufferSize)
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+
 		n, from, err := s.conn.ReadFromUDP(buffer)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -176,6 +192,7 @@ func (s *Session) Run(ctx context.Context) error {
 
 		kind, payload, err := s.codec.Open(buffer[:n])
 		if err != nil {
+			s.countProbe(from)
 			continue
 		}
 		if !s.accept(from) {
@@ -186,7 +203,15 @@ func (s *Session) Run(ctx context.Context) error {
 
 		switch kind {
 		case kindMessage:
+			// Only text crosses this channel. A frame carrying anything else
+			// is not this program on the other end, so it is dropped rather
+			// than cleaned up and shown.
+			if !text.Valid(payload) {
+				continue
+			}
 			s.events().Message(payload)
+		case kindBye:
+			s.depart()
 		case kindTyping:
 			s.events().Typing(len(payload) > 0 && payload[0] == '1')
 		case kindPing:
@@ -204,18 +229,27 @@ func (s *Session) Run(ctx context.Context) error {
 	}
 }
 
-// SendMessage queues the text while the path is still being negotiated and
-// sends it straight away once it is open.
-func (s *Session) SendMessage(text string) {
+// SendMessage queues the line while the path is still being negotiated and
+// sends it straight away once it is open. The line is sanitised first, so this
+// channel carries text and nothing else, whatever the caller handed over.
+func (s *Session) SendMessage(line string) {
+	line = text.Safe(line)
+
 	s.mu.Lock()
 	if !s.open {
-		s.pending = append(s.pending, text)
+		s.pending = append(s.pending, line)
 		s.mu.Unlock()
 		return
 	}
 	s.mu.Unlock()
 
-	s.send(kindMessage, text)
+	s.send(kindMessage, line)
+}
+
+// Goodbye tells the peer this side is leaving, so it can say so at once instead
+// of waiting out the silence.
+func (s *Session) Goodbye() {
+	s.send(kindBye, pad())
 }
 
 func (s *Session) punchLoop(ctx context.Context) {

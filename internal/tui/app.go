@@ -29,6 +29,8 @@ type Chat struct {
 	events    chan func()
 	sendLine  func(string)
 	setTyping func(bool)
+	command   func(string) bool
+	quit      chan struct{}
 }
 
 func NewChat(terminal *Terminal, me, peer string) *Chat {
@@ -38,6 +40,7 @@ func NewChat(terminal *Terminal, me, peer string) *Chat {
 		screen:   NewScreen(width, height),
 		state:    State{Phase: PhaseLoading, Me: me, Peer: peer, Status: "starting"},
 		events:   make(chan func(), 64),
+		quit:     make(chan struct{}),
 	}
 }
 
@@ -46,6 +49,19 @@ func NewChat(terminal *Terminal, me, peer string) *Chat {
 // about sockets.
 func (c *Chat) OnSend(send func(string))   { c.sendLine = send }
 func (c *Chat) OnTyping(typing func(bool)) { c.setTyping = typing }
+
+// OnCommand gets each line before it becomes a message. Returning true consumes
+// it, so a command is neither shown in the conversation nor sent to the peer.
+func (c *Chat) OnCommand(handler func(string) bool) { c.command = handler }
+
+// Quit ends the UI from anywhere, which is what a command needs to do.
+func (c *Chat) Quit() {
+	select {
+	case <-c.quit:
+	default:
+		close(c.quit)
+	}
+}
 
 func (c *Chat) dispatch(mutate func()) {
 	select {
@@ -137,6 +153,9 @@ func (c *Chat) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 
+		case <-c.quit:
+			return nil
+
 		case mutate := <-c.events:
 			mutate()
 
@@ -150,6 +169,9 @@ func (c *Chat) Run(ctx context.Context) error {
 			}
 			if key.Kind == KeyEnter {
 				if line := c.editor.Take(); line != "" {
+					if c.command != nil && c.command(line) {
+						break
+					}
 					c.appendMine(line)
 					if c.sendLine != nil {
 						c.sendLine(line)

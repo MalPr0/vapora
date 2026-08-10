@@ -156,6 +156,11 @@ session and notices, and the chat hands you a fresh invite to send. This one
 cannot be automatic: telling them the new address needs a channel that still
 works, which is the same gap a rendezvous would fill.
 
+Typing `!exit` ends the session at once. It is checked before a line becomes a
+message, so it never reaches the peer as text, and it says goodbye on the way
+out: quitting on purpose is otherwise indistinguishable from a network that went
+quiet, and the other side would wait out the whole silence budget to find out.
+
 The conversation stacks upward from the input line and keeps its whole history:
 `pgup` and `pgdn` walk it, a marker shows how much is hidden above and below,
 and sending a line snaps back to the newest one.
@@ -185,6 +190,32 @@ Control frames carry random filler. AEAD hides what a frame says but not how
 long it is, and a ping with nothing to carry would be a fixed size arriving on a
 fixed cadence, which is a heartbeat visible to anyone counting bytes. Padding
 puts it inside the same size spread as the messages it travels among.
+
+### Only text crosses the channel
+
+Outgoing lines are sanitised, so what leaves is always text. Incoming ones are
+**validated**, and a frame carrying anything else is dropped rather than cleaned
+up and shown: a peer sending non-text is not this program, and treating it as a
+rendering problem would be papering over that.
+
+### What an attacker can and cannot learn
+
+Traffic that fails to authenticate is **never answered**. A scanner sweeping this
+port gets silence, which is the same thing it gets from a closed port, so
+probing confirms nothing.
+
+It is counted, though. An address that only ever appeared on one invite should
+not be hearing from anybody else, so the session reports it: `6 packets from 1
+address(es) reached this port and could not authenticate`. That is not an attack
+in progress, it is a signal that the invite is more public than it was meant to
+be, and starting a new session gives a new secret and usually a new port.
+
+What no amount of code hides: **your peer sees your IP**, because the packets go
+from your address to theirs; **so do the STUN servers**, because asking what your
+address is means asking somebody; and **so does whoever sees the invite**, since
+it carries the address. Those are properties of a direct channel, not defects to
+fix, and the only way around them is relaying every packet through a third
+party.
 
 ### What anonymous means here
 

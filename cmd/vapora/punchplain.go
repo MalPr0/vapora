@@ -14,7 +14,10 @@ import (
 // runPunchPlain is the line based front end. It is what a pipe, a CI job or a
 // terminal that refuses raw mode gets, and it stays the reference behaviour.
 func runPunchPlain(ctx context.Context, open *channel) error {
-	go readStdin(ctx, open)
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+
+	go readStdin(ctx, open, quit)
 
 	hint := time.AfterFunc(pasteHint, func() {
 		if open.session.Peer() == nil {
@@ -76,13 +79,19 @@ func printInvite(open *channel, endpoint *net.UDPAddr) {
 
 // readStdin doubles as the invite prompt before the path is open and as the
 // chat input once it is, so a single reader owns the terminal.
-func readStdin(ctx context.Context, open *channel) {
+func readStdin(ctx context.Context, open *channel, quit context.CancelFunc) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return
 		}
 		line := scanner.Text()
+
+		if isExit(line) {
+			leave(open.session)
+			quit()
+			return
+		}
 
 		if open.session.Peer() != nil {
 			open.session.SendMessage(line)

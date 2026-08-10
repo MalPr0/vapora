@@ -71,7 +71,15 @@ a signature is a change to the contract.
 - **Control frames are padded.** AEAD hides content, not length. A frame whose
   only content is its kind would have a length nobody else produces, on a
   cadence that names it a heartbeat.
-- **Never print network bytes raw.** Route them through `text.Safe` first.
+- **Never print network bytes raw.** Route them through `text.Safe` first, and
+  note the invariant it carries: everything `Safe` produces satisfies `Valid`.
+  Break that and a line is sanitised on the way out and rejected on the way in.
+- **Only text crosses the channel.** Sanitise outgoing, validate incoming, drop
+  what fails. A peer sending non-text is not this program.
+- **Never answer what did not authenticate.** Silence is what makes probing
+  this port indistinguishable from probing a closed one. Count it instead.
+- **Cancelling a context does not interrupt a blocked read.** A loop that only
+  checks `ctx.Err()` after a read error never stops while a peer keeps talking.
 - **Publish the endpoint STUN observed, never the one requested.** Behind double
   NAT the external port of a UPnP mapping lives on a private WAN address and is
   not what a peer on the internet dials.

@@ -54,6 +54,9 @@ const (
 // Health is a snapshot of the path.
 type Health struct {
 	Link Link
+	// Departed means the peer said it was leaving, rather than the path having
+	// simply gone quiet. The two look identical on the wire otherwise.
+	Departed bool
 	// RTT is the round trip of the last answered ping, zero until one is.
 	RTT time.Duration
 	// Silence is how long since anything at all arrived from the peer.
@@ -72,7 +75,11 @@ func (s *Session) Health() Health {
 	}
 
 	silence := time.Since(s.lastHeard)
-	health := Health{RTT: s.rtt, Silence: silence}
+	health := Health{RTT: s.rtt, Silence: silence, Departed: s.departed}
+	if s.departed {
+		health.Link = LinkLost
+		return health
+	}
 	switch {
 	case silence >= lostAfter:
 		health.Link = LinkLost

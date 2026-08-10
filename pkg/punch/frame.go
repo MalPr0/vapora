@@ -18,6 +18,10 @@ const (
 	// their only job is to make the absence of the peer measurable.
 	kindPing byte = 0x06
 	kindPong byte = 0x07
+	// kindBye says the peer is leaving on purpose. Without it, quitting is
+	// indistinguishable from a network that went quiet, and the other side
+	// waits out the whole silence budget to find out.
+	kindBye byte = 0x08
 )
 
 var errEmptyFrame = errors.New("punch: empty frame")

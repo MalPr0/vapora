@@ -29,6 +29,14 @@ func runPunchUI(ctx context.Context, open *channel) error {
 	chat := tui.NewChat(terminal, me, peer)
 	chat.OnSend(open.session.SendMessage)
 	chat.OnTyping(open.session.SetTyping)
+	chat.OnCommand(func(line string) bool {
+		if !isExit(line) {
+			return false
+		}
+		leave(open.session)
+		chat.Quit()
+		return true
+	})
 	open.session.Observe(chat)
 
 	uiCtx, stopUI := context.WithCancel(ctx)

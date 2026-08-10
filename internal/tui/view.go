@@ -317,7 +317,7 @@ func drawFooter(screen *Screen, state State, width, height int) {
 	cursorX := 2 + TextWidth(prompt) + TextWidth(string(runes[:cursor]))
 	drawCursor(screen, cursorX, height-2)
 
-	hint := "enter sends  ·  pgup/pgdn scrolls  ·  ctrl+c quits"
+	hint := "enter sends  ·  pgup/pgdn scrolls  ·  !exit or ctrl+c quits"
 	screen.Text(width-TextWidth(hint)-2, height-1, hint, DarkGray, Black)
 }
 
