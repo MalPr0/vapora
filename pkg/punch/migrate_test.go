@@ -187,3 +187,37 @@ func TestAQuietPathIsPunchedAgain(t *testing.T) {
 		}
 	}
 }
+
+// Waiting is when an endpoint change matters most: the invite already shared is
+// the thing that stops working, and nobody is talking yet to notice.
+func TestSniffAlsoWorksWhileWaiting(t *testing.T) {
+	home, other := listen(t), listen(t)
+	defer home.Close()
+	defer other.Close()
+
+	claimed := make(chan struct{}, 4)
+	session := NewSession(home, PlainCodec{}, &syncBuffer{})
+	session.SetPeer(localAddr(t, other))
+	session.Sniff(func(payload []byte, _ *net.UDPAddr) bool {
+		if len(payload) > 0 && payload[0] == 0xEE {
+			claimed <- struct{}{}
+			return true
+		}
+		return false
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Open, not Run: the session is still punching and nothing is established.
+	go session.Open(ctx, 3*time.Second)
+
+	time.Sleep(100 * time.Millisecond)
+	_, _ = other.WriteToUDP([]byte{0xEE}, localAddr(t, home))
+
+	select {
+	case <-claimed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a shared socket saw nothing while the session was waiting")
+	}
+}

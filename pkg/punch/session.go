@@ -103,6 +103,13 @@ func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 			return ErrPunchTimeout
 		}
 
+		// Whoever shares this socket gets its datagrams here too. Waiting is
+		// exactly when an endpoint change matters most, because the invite
+		// already handed out is the thing that stops working.
+		if s.sniffed(buffer[:n], from) {
+			continue
+		}
+
 		// A frame that does not authenticate is someone else's packet: the
 		// secret is what keeps a stranger from becoming the peer.
 		kind, _, err := s.codec.Open(buffer[:n])
