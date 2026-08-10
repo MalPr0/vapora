@@ -56,9 +56,12 @@ a signature is a change to the contract.
 - **Liveness is a poll, not an event.** Nothing arrives to announce that
   nothing is arriving, so `Session.Health` computes from a timestamp rather
   than firing a callback. Any authenticated frame refreshes it.
-- **One reader, dispatched.** `Session.Sniff` is how another protocol shares
-  the socket; it is the seed of the demultiplexer, not a workaround. Writes are
-  safe from any goroutine, reads are not.
+- **One reader, dispatched, and never interrupted.** `Session.Sniff` is how
+  another protocol shares the socket; it is the seed of the demultiplexer, not
+  a workaround. Writes are safe from any goroutine, reads are not. The subtle
+  part is the gap: between `Open` returning and `Run` starting, nothing
+  dispatches, so waiting on something the socket must deliver starves it. Never
+  block between the two.
 - **The codec decides who the peer is, including where it is.** Following a
   peer to a new address is allowed only for a frame that authenticates, and
   only once the path has gone quiet.

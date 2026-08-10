@@ -141,3 +141,57 @@ func newMovingServer(t *testing.T, _ uint16) *movingServer {
 }
 
 func (s *movingServer) address() string { return s.conn.LocalAddr().String() }
+
+// Nothing can be shared before the first answer, so it must not be hostage to
+// one server and one datagram.
+func TestWatcherProbesHardUntilItHasAnAnswer(t *testing.T) {
+	conn, server := watcherSockets(t)
+
+	watcher := NewWatcher([]string{server.address(), server.address(), server.address()}, time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Run(ctx, conn)
+
+	// With the steady cadence at a minute, a watcher that waited for it would
+	// have sent exactly one probe by now.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		watcher.mu.Lock()
+		sent := len(watcher.pending)
+		watcher.mu.Unlock()
+		if sent >= 3 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("the watcher was still waiting on its first server after two seconds")
+}
+
+// Once it has an answer there is nothing to hurry for, and the cadence is only
+// there to keep a NAT binding warm.
+func TestWatcherSettlesAfterTheFirstAnswer(t *testing.T) {
+	conn, server := watcherSockets(t)
+
+	watcher := NewWatcher([]string{server.address()}, time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Run(ctx, conn)
+
+	feed(t, conn, watcher, "203.0.113.5:41001")
+
+	watcher.mu.Lock()
+	watcher.pending = map[[12]byte]time.Time{}
+	watcher.mu.Unlock()
+
+	time.Sleep(time.Second)
+	watcher.mu.Lock()
+	sent := len(watcher.pending)
+	watcher.mu.Unlock()
+
+	// One trailing probe is expected: the cadence is decided after a probe
+	// goes out, so the one already scheduled when the answer landed still
+	// fires. A second would mean it never settled.
+	if sent > 1 {
+		t.Fatalf("a settled watcher sent %d probes in a second", sent)
+	}
+}

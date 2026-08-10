@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
@@ -20,6 +21,12 @@ const inviteCommand = "vapora punch"
 // paste back, which is what a restricted NAT ends up needing.
 const pasteHint = 12 * time.Second
 
+// endpointTimeout is how long to keep asking STUN before giving up on knowing
+// this side's public address. It is generous because the watcher rotates
+// servers several times a second until one answers, so reaching it means the
+// network is blocking STUN rather than one server being slow.
+const endpointTimeout = 15 * time.Second
+
 // channel is everything a session needs, assembled before either front end
 // takes over.
 type channel struct {
@@ -32,6 +39,10 @@ type channel struct {
 	peer      *net.UDPAddr
 	timeout   time.Duration
 	keepalive time.Duration
+
+	// established marks that the path is up, so an address arriving later has
+	// nothing left to offer a joiner: its only use was the fallback line.
+	established atomic.Bool
 }
 
 func runPunch(args []string) error {
@@ -120,21 +131,26 @@ func resolveRole(args []string) (punch.Secret, *net.UDPAddr, punch.Role, error) 
 func (c *channel) waitForPath(ctx context.Context, invite func(*net.UDPAddr)) error {
 	go c.watcher.Run(ctx, c.conn)
 
-	opened := make(chan error, 1)
-	go func() { opened <- c.session.Open(ctx, c.timeout) }()
+	// The address is handed over whenever it turns up rather than waited on
+	// here. The session owns the only reader, and between Open returning and
+	// Run starting nothing dispatches to the watcher: waiting here would starve
+	// the very answer being waited for, which is what a peer joining an already
+	// waiting invite does every time.
+	go func() {
+		endpoint, err := c.watcher.Wait(ctx, endpointTimeout)
+		if err != nil {
+			endpoint = nil
+		}
+		invite(endpoint)
+	}()
 
-	endpoint, err := c.watcher.Wait(ctx, stunTimeout)
-	if err != nil {
-		return err
-	}
-	invite(endpoint)
-
-	if err := <-opened; err != nil {
+	if err := c.session.Open(ctx, c.timeout); err != nil {
 		if errors.Is(err, punch.ErrPunchTimeout) {
 			return fmt.Errorf("%w: both sides have to run at once, and the secret has to match", err)
 		}
 		return err
 	}
+	c.established.Store(true)
 	return nil
 }
 

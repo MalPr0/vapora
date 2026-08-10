@@ -10,9 +10,17 @@ import (
 	"time"
 )
 
-// pendingTTL bounds how long an unanswered request is remembered. Dropping the
-// whole table instead would throw away requests still legitimately in flight.
-const pendingTTL = 30 * time.Second
+const (
+	// pendingTTL bounds how long an unanswered request is remembered. Dropping
+	// the whole table instead would throw away requests still legitimately in
+	// flight.
+	pendingTTL = 30 * time.Second
+	// startupInterval is the cadence before the first answer. Probing at the
+	// keepalive rate instead would make that answer hostage to one server and
+	// one datagram, and UDP loses datagrams; nothing can be shared until it
+	// arrives, so this rotates through every server several times a second.
+	startupInterval = 400 * time.Millisecond
+)
 
 // Watcher tracks the public endpoint of a socket it does not own. It writes on
 // its own, because writes to a UDP socket are safe from any goroutine, and is
@@ -67,18 +75,26 @@ func (w *Watcher) Run(ctx context.Context, conn *net.UDPConn) error {
 		return errors.New("stun: watcher needs a socket")
 	}
 
-	ticker := time.NewTicker(w.every)
-	defer ticker.Stop()
-
 	for attempt := 0; ; attempt++ {
 		w.probe(conn, w.servers[attempt%len(w.servers)])
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+		case <-time.After(w.interval()):
 		}
 	}
+}
+
+// interval probes hard until there is something to report, then settles into
+// the cadence that only has to keep a NAT binding warm. Startup is never the
+// slower of the two: the point is to get an answer sooner, not to override a
+// caller that wants a tighter cadence than this.
+func (w *Watcher) interval() time.Duration {
+	if w.Endpoint() != nil || w.every < startupInterval {
+		return w.every
+	}
+	return startupInterval
 }
 
 func (w *Watcher) probe(conn *net.UDPConn, server string) {

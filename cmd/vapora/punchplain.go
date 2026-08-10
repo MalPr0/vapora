@@ -28,6 +28,10 @@ func runPunchPlain(ctx context.Context, open *channel) error {
 		fmt.Printf("\n-- %s\n", movedMessage(open, current))
 	})
 
+	if open.role == punch.RoleJoiner {
+		fmt.Printf("\npunching towards %s\n", open.peer)
+	}
+
 	if err := open.waitForPath(ctx, func(endpoint *net.UDPAddr) {
 		printInvite(open, endpoint)
 	}); err != nil {
@@ -47,8 +51,20 @@ func runPunchPlain(ctx context.Context, open *channel) error {
 func printInvite(open *channel, endpoint *net.UDPAddr) {
 	fmt.Println()
 	if open.role == punch.RoleJoiner {
-		fmt.Printf("punching towards %s\n", open.peer)
+		if open.established.Load() {
+			return // the fallback line has nothing to offer an open path
+		}
+		if endpoint == nil {
+			fmt.Println("no STUN server answered, so there is no invite to send back if this stalls")
+			return
+		}
 		fmt.Printf("if it does not connect, send this back so they can paste it:\n\n    %s\n\n", open.inviteFor(endpoint))
+		return
+	}
+
+	if endpoint == nil {
+		fmt.Println("no STUN server answered, so there is no address to put on an invite.")
+		fmt.Println("something on this network is blocking STUN; run `vapora nat` to see how far it gets.")
 		return
 	}
 

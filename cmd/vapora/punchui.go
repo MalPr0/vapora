@@ -99,8 +99,18 @@ func connect(ctx context.Context, open *channel, chat *tui.Chat) error {
 
 	err := open.waitForPath(ctx, func(endpoint *net.UDPAddr) {
 		if open.role == punch.RoleJoiner {
+			if open.established.Load() {
+				return
+			}
 			chat.SetStatus("punching towards your friend", 0.2)
-			chat.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
+			if endpoint != nil {
+				chat.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
+			}
+			return
+		}
+		if endpoint == nil {
+			chat.SetStatus("no STUN server answered, there is no address to share", 0.2)
+			chat.SetInvite("something here is blocking STUN. Try: vapora nat")
 			return
 		}
 		chat.SetStatus("waiting for your friend to join", 0.2)
