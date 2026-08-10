@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/pkg/punch"
-	"github.com/MalPr0/vapora/pkg/stun"
 )
 
 // runPunchPlain is the line based front end. It is what a pipe, a CI job or a
@@ -23,7 +22,9 @@ func runPunchPlain(ctx context.Context, open *channel) error {
 
 	printInvite(open, endpoint)
 	go readStdin(ctx, open)
-	go stun.Keepalive(ctx, open.conn, stun.DefaultServers, open.keepalive)
+	go watchEndpoint(ctx, open, func(_, current *net.UDPAddr) {
+		fmt.Printf("\n-- %s\n", movedMessage(open, current))
+	})
 
 	hint := time.AfterFunc(pasteHint, func() {
 		if open.session.Peer() == nil {
@@ -44,8 +45,8 @@ func runPunchPlain(ctx context.Context, open *channel) error {
 	fmt.Printf("\ndirect UDP path open with %s. You are %s, they are %s. Type to chat, ctrl+c to quit\n",
 		open.session.Peer(), open.nicknames.For(open.role), open.nicknames.Other(open.role))
 
-	go watchHealth(ctx, open.session, func(health punch.Health) {
-		fmt.Printf("-- %s\n", linkMessage(health))
+	go watchPath(ctx, open, func(recovery Recovery) {
+		fmt.Printf("-- %s\n", recoveryMessage(recovery))
 	})
 	return open.session.Run(ctx)
 }

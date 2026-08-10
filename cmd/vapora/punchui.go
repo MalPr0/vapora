@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
 	"github.com/MalPr0/vapora/pkg/punch"
-	"github.com/MalPr0/vapora/pkg/stun"
 )
 
 // errNoTerminal says the tty refused raw mode, which is the one failure the
@@ -57,8 +57,8 @@ func runPunchUI(ctx context.Context, open *channel) error {
 // pushHealth keeps the link indicator current and posts a line when the verdict
 // changes, so a path that goes quiet says so instead of just looking idle.
 func pushHealth(ctx context.Context, open *channel, chat *tui.Chat) {
-	go watchHealth(ctx, open.session, func(health punch.Health) {
-		chat.System(linkMessage(health))
+	go watchPath(ctx, open, func(recovery Recovery) {
+		chat.System(recoveryMessage(recovery))
 	})
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -104,7 +104,10 @@ func connect(ctx context.Context, open *channel, chat *tui.Chat) error {
 		chat.SetInvite(open.inviteFor(endpoint))
 	}
 
-	go stun.Keepalive(ctx, open.conn, stun.DefaultServers, open.keepalive)
+	go watchEndpoint(ctx, open, func(_, current *net.UDPAddr) {
+		chat.SetInvite(open.inviteFor(current))
+		chat.System(movedMessage(open, current))
+	})
 	go trackProgress(ctx, open, chat)
 
 	if err := open.session.Open(ctx, open.timeout); err != nil {

@@ -3,7 +3,6 @@ package stun
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"time"
 )
@@ -25,40 +24,5 @@ func Keepalive(ctx context.Context, conn *net.UDPConn, servers []string, every t
 	if len(servers) == 0 {
 		return errors.New("stun: keepalive needs at least one server")
 	}
-	if every <= 0 {
-		every = DefaultKeepalive
-	}
-
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
-
-	for attempt := 0; ; attempt++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-
-		// Rotating spreads the load instead of hammering one server, and it
-		// keeps a single unreachable server from stalling every refresh.
-		if err := sendBindingRequest(conn, servers[attempt%len(servers)]); err != nil {
-			continue
-		}
-	}
-}
-
-func sendBindingRequest(conn *net.UDPConn, server string) error {
-	target, err := net.ResolveUDPAddr("udp4", server)
-	if err != nil {
-		return fmt.Errorf("stun: cannot resolve %s: %w", server, err)
-	}
-
-	_, request, err := buildBindingRequest(queryOptions{})
-	if err != nil {
-		return err
-	}
-	if _, err := conn.WriteToUDP(request, target); err != nil {
-		return fmt.Errorf("stun: cannot send keepalive to %s: %w", server, err)
-	}
-	return nil
+	return NewWatcher(servers, every).Run(ctx, conn)
 }

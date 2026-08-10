@@ -42,6 +42,9 @@ const (
 	// lostAfter is long enough that a laptop lid or a roaming handover has had
 	// its chance to come back.
 	lostAfter = 45 * time.Second
+	// recoverInterval is the cadence once the path is degraded. Recovery is
+	// worth the extra packets; an idle path is not.
+	recoverInterval = time.Second
 )
 
 // Health is a snapshot of the path.
@@ -87,15 +90,23 @@ func (s *Session) heard() {
 // a pong that never reaches the UI, so a live path stays invisible and only its
 // absence is worth showing.
 func (s *Session) pingLoop(ctx context.Context) {
-	ticker := time.NewTicker(pingInterval)
-	defer ticker.Stop()
-
 	for {
 		s.sendPing()
+
+		// A quiet path is worth working at harder. Both NATs may simply have
+		// dropped their state while nothing was flowing, and a fresh punch
+		// rebuilds it without anyone restarting anything; probing at the idle
+		// cadence would make every recovery wait out a full interval.
+		delay := pingInterval
+		if s.Health().Link != LinkAlive {
+			s.send(kindPunch, "")
+			delay = recoverInterval
+		}
+
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(delay):
 		}
 	}
 }

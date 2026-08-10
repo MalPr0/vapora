@@ -56,6 +56,12 @@ a signature is a change to the contract.
 - **Liveness is a poll, not an event.** Nothing arrives to announce that
   nothing is arriving, so `Session.Health` computes from a timestamp rather
   than firing a callback. Any authenticated frame refreshes it.
+- **One reader, dispatched.** `Session.Sniff` is how another protocol shares
+  the socket; it is the seed of the demultiplexer, not a workaround. Writes are
+  safe from any goroutine, reads are not.
+- **The codec decides who the peer is, including where it is.** Following a
+  peer to a new address is allowed only for a frame that authenticates, and
+  only once the path has gone quiet.
 - **Never print network bytes raw.** Route them through `text.Safe` first.
 - **Publish the endpoint STUN observed, never the one requested.** Behind double
   NAT the external port of a UPnP mapping lives on a private WAN address and is

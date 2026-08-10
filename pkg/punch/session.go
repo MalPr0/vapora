@@ -36,6 +36,8 @@ type Session struct {
 	rtt        time.Duration
 	pingSeq    uint64
 	pingSentAt time.Time
+	moves      int
+	sniff      func(payload []byte, from *net.UDPAddr) bool
 }
 
 func NewSession(conn *net.UDPConn, codec Codec, output io.Writer) *Session {
@@ -160,12 +162,15 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 			return fmt.Errorf("punch: read failed: %w", err)
 		}
-		if peer := s.Peer(); peer == nil || !sameEndpoint(peer, from) {
+		if s.sniffed(buffer[:n], from) {
 			continue
 		}
 
 		kind, payload, err := s.codec.Open(buffer[:n])
 		if err != nil {
+			continue
+		}
+		if !s.accept(from) {
 			continue
 		}
 		// Every frame that authenticates is proof of life, whatever it carries.
@@ -225,4 +230,55 @@ func (s *Session) send(kind byte, payload string) {
 
 func sameEndpoint(a, b *net.UDPAddr) bool {
 	return a.IP.Equal(b.IP) && a.Port == b.Port
+}
+
+// Sniff hands datagrams that are not from the peer to another protocol sharing
+// this socket. There can only be one reader on a UDP socket, so anything else
+// that needs to see traffic has to be dispatched from here rather than reading
+// alongside.
+func (s *Session) Sniff(handler func(payload []byte, from *net.UDPAddr) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sniff = handler
+}
+
+func (s *Session) sniffed(payload []byte, from *net.UDPAddr) bool {
+	s.mu.RLock()
+	handler := s.sniff
+	s.mu.RUnlock()
+
+	return handler != nil && handler(payload, from)
+}
+
+// accept decides whether an authenticated frame from this address belongs to
+// the session. A frame from somewhere new is the peer having moved: only the
+// holder of the secret can produce one, so following it is as safe as trusting
+// the secret in the first place. It is only followed once the path has gone
+// quiet, which keeps a healthy conversation from flapping between addresses.
+func (s *Session) accept(from *net.UDPAddr) bool {
+	peer := s.Peer()
+	if peer == nil {
+		return false
+	}
+	if sameEndpoint(peer, from) {
+		return true
+	}
+	if s.Health().Link == LinkAlive {
+		return false
+	}
+
+	s.mu.Lock()
+	s.peer = from
+	s.moves++
+	s.mu.Unlock()
+	return true
+}
+
+// Moves counts how many times the peer has been followed to a new address.
+// The caller polls it, the way it polls Health: nothing arrives to announce a
+// migration that has already been accepted.
+func (s *Session) Moves() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.moves
 }

@@ -134,6 +134,28 @@ The five second interval is not a detection tuning: it is below the shortest NAT
 binding timeouts seen in the wild, so the same packet that measures the path
 also keeps it open.
 
+### Coming back after a break
+
+Three things can break an open path, and they are not equally recoverable.
+
+**The routers forgot.** A laptop lid, an idle stretch, a NAT dropping state:
+both endpoints are unchanged, only the pinholes are gone. The moment the path
+goes quiet the ping cadence tightens and punches start again, so this heals with
+nobody doing anything.
+
+**Your friend moved.** New wifi, cellular handover, a restart on another port.
+Their address is new and nothing announced it. If a frame arrives from somewhere
+else and it authenticates, the path follows it. That is safe for the same reason
+the invite is: only the holder of the secret can produce such a frame, so
+following one trusts exactly what was already trusted. A healthy conversation
+never follows, which keeps two live paths from chasing each other.
+
+**You moved.** Now the address on the invite you shared has stopped existing and
+your friend is talking to nobody. A STUN watcher shares the socket with the
+session and notices, and the chat hands you a fresh invite to send. This one
+cannot be automatic: telling them the new address needs a channel that still
+works, which is the same gap a rendezvous would fill.
+
 The conversation stacks upward from the input line and keeps its whole history:
 `pgup` and `pgdn` walk it, a marker shows how much is hidden above and below,
 and sending a line snaps back to the newest one.
