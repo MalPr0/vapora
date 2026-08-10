@@ -113,6 +113,27 @@ While the other side is writing, a courier runs in the footer and the line reads
 first keystroke and withdrawn when the line is sent or two seconds pass with no
 typing.
 
+### Knowing the path is still there
+
+UDP has no connection, so there is nothing to close and no close to be told
+about. A peer that walks away, loses wifi or gets killed looks exactly like a
+peer with nothing to say.
+
+So the session sends a ping every five seconds and the other side answers with a
+pong. Neither ever reaches the chat: a healthy path stays invisible, and the
+probe exists only to make silence measurable. Any frame that authenticates
+counts as proof of life, so a talkative peer is never probed for nothing.
+
+After twelve seconds of silence the header shows `no reply 14s`; after
+forty-five it blinks `LINK LOST`. Probing continues either way, because a path
+that healed on its own should come back without anyone restarting anything. When
+it is healthy the header carries the round trip instead, which is the only thing
+the probe is otherwise good for.
+
+The five second interval is not a detection tuning: it is below the shortest NAT
+binding timeouts seen in the wild, so the same packet that measures the path
+also keeps it open.
+
 The conversation stacks upward from the input line and keeps its whole history:
 `pgup` and `pgdn` walk it, a marker shows how much is hidden above and below,
 and sending a line snaps back to the newest one.

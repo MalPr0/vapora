@@ -43,6 +43,10 @@ func runPunchPlain(ctx context.Context, open *channel) error {
 
 	fmt.Printf("\ndirect UDP path open with %s. You are %s, they are %s. Type to chat, ctrl+c to quit\n",
 		open.session.Peer(), open.nicknames.For(open.role), open.nicknames.Other(open.role))
+
+	go watchHealth(ctx, open.session, func(health punch.Health) {
+		fmt.Printf("-- %s\n", linkMessage(health))
+	})
 	return open.session.Run(ctx)
 }
 

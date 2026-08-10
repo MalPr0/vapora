@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func chatWith(count int, scroll int) State {
@@ -120,5 +121,47 @@ func TestPageKeysDecode(t *testing.T) {
 
 	if _, consumed := DecodeKey([]byte("\x1b[5")); consumed != 0 {
 		t.Fatalf("a partial page key consumed %d", consumed)
+	}
+}
+
+// A healthy path says almost nothing; the badge exists for when it stops.
+func TestLinkBadgeOnlySpeaksWhenSomethingIsWrong(t *testing.T) {
+	alive := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkAlive}))
+	if strings.Contains(alive, "LINK LOST") || strings.Contains(alive, "no reply") {
+		t.Fatalf("a healthy link raised an alarm:\n%s", alive)
+	}
+
+	stale := plain(drawState(State{
+		Phase: PhaseChat, Peer: "BADGER", Link: LinkStale, Silence: 14 * time.Second,
+	}))
+	if !strings.Contains(stale, "no reply 14s") {
+		t.Fatalf("a stale link did not report its silence:\n%s", stale)
+	}
+	if !strings.Contains(stale, "◐") {
+		t.Fatal("a stale link kept the healthy marker")
+	}
+
+	lost := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 0}))
+	if !strings.Contains(lost, "LINK LOST") || !strings.Contains(lost, "○") {
+		t.Fatalf("a lost link did not say so:\n%s", lost)
+	}
+}
+
+// The lost badge blinks, which is the one signal a console can give that the
+// eye catches without moving.
+func TestLostLinkBlinks(t *testing.T) {
+	on := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 0}))
+	off := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 5}))
+	if on == off {
+		t.Fatal("the lost badge did not blink")
+	}
+}
+
+func TestRoundTripIsShownWhenKnown(t *testing.T) {
+	frame := plain(drawState(State{
+		Phase: PhaseChat, Peer: "BADGER", Link: LinkAlive, RTT: 42 * time.Millisecond,
+	}))
+	if !strings.Contains(frame, "42ms") {
+		t.Fatalf("the round trip is not shown:\n%s", frame)
 	}
 }

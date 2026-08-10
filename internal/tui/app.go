@@ -73,6 +73,15 @@ func (c *Chat) SetProgress(progress float64) {
 	c.update(func(s *State) { s.Progress = progress })
 }
 
+// SetLink records what the transport reports about the path.
+func (c *Chat) SetLink(link LinkState, rtt, silence time.Duration) {
+	c.update(func(s *State) {
+		s.Link = link
+		s.RTT = rtt
+		s.Silence = silence
+	})
+}
+
 func (c *Chat) SetInvite(invite string) {
 	c.update(func(s *State) { s.Invite = invite })
 }

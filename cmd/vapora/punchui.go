@@ -45,12 +45,45 @@ func runPunchUI(ctx context.Context, open *channel) error {
 			return
 		}
 		chat.Connected(me, peer)
+		go pushHealth(uiCtx, open, chat)
 		if err := open.session.Run(uiCtx); err != nil {
 			chat.Closed(err.Error())
 		}
 	}()
 
 	return <-done
+}
+
+// pushHealth keeps the link indicator current and posts a line when the verdict
+// changes, so a path that goes quiet says so instead of just looking idle.
+func pushHealth(ctx context.Context, open *channel, chat *tui.Chat) {
+	go watchHealth(ctx, open.session, func(health punch.Health) {
+		chat.System(linkMessage(health))
+	})
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			health := open.session.Health()
+			chat.SetLink(linkState(health.Link), health.RTT, health.Silence)
+		}
+	}
+}
+
+func linkState(link punch.Link) tui.LinkState {
+	switch link {
+	case punch.LinkStale:
+		return tui.LinkStale
+	case punch.LinkLost:
+		return tui.LinkLost
+	default:
+		return tui.LinkAlive
+	}
 }
 
 // connect drives the loading screen through the handshake and hands the invite

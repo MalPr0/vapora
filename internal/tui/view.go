@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MalPr0/vapora/pkg/text"
 )
@@ -38,7 +39,20 @@ type State struct {
 	PeerTyping  bool
 	Frame       int
 	ClosedError string
+	Link        LinkState
+	RTT         time.Duration
+	Silence     time.Duration
 }
+
+// LinkState mirrors what the session can infer about the path. The UI keeps its
+// own copy of the vocabulary so it stays independent of the transport.
+type LinkState int
+
+const (
+	LinkAlive LinkState = iota
+	LinkStale
+	LinkLost
+)
 
 const (
 	// headerHeight fits the wordmark, which is seven pixels and therefore four
@@ -79,10 +93,35 @@ func drawHeader(screen *Screen, state State, width int) {
 	if state.Phase == PhaseChat {
 		badge := fmt.Sprintf("● %s", state.Me)
 		screen.Text(width-TextWidth(badge)-2, 2, badge, speakerColor(state.Me), Black)
-		peer := fmt.Sprintf("↔ %s", state.Peer)
+
+		mark, label, color := linkBadge(state)
+		peer := fmt.Sprintf("%s %s", mark, state.Peer)
 		screen.Text(width-TextWidth(peer)-2, 3, peer, speakerColor(state.Peer), Black)
+		screen.Text(width-TextWidth(label)-2, 4, label, color, Black)
 	}
 	rule(screen, headerHeight-1, width, Gold, Black)
+}
+
+// linkBadge turns silence into something readable. A healthy path says almost
+// nothing, because the point of the probe is that it stays invisible until it
+// stops being answered.
+func linkBadge(state State) (mark, label string, color int) {
+	switch state.Link {
+	case LinkLost:
+		// Blinking is the one thing a console can do that the eye catches
+		// without moving, and a dead link has earned it.
+		if state.Frame%8 < 4 {
+			return "○", "LINK LOST", Red
+		}
+		return "○", "", Red
+	case LinkStale:
+		return "◐", fmt.Sprintf("no reply %ds", int(state.Silence.Seconds())), Gold
+	default:
+		if state.RTT > 0 {
+			return "●", fmt.Sprintf("%dms", state.RTT.Milliseconds()), Gray
+		}
+		return "●", "", Gray
+	}
 }
 
 func rule(screen *Screen, y, width, color, bg int) {

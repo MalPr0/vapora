@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	punchInterval     = 300 * time.Millisecond
-	keepaliveInterval = 15 * time.Second
-	readBufferSize    = 2048
+	punchInterval  = 300 * time.Millisecond
+	readBufferSize = 2048
 )
 
 // ErrPunchTimeout means no packet ever arrived from the peer, which usually
@@ -32,6 +31,11 @@ type Session struct {
 	open     bool
 	pending  []string
 	observer Observer
+
+	lastHeard  time.Time
+	rtt        time.Duration
+	pingSeq    uint64
+	pingSentAt time.Time
 }
 
 func NewSession(conn *net.UDPConn, codec Codec, output io.Writer) *Session {
@@ -144,7 +148,8 @@ func (s *Session) Run(ctx context.Context) error {
 		return fmt.Errorf("punch: cannot clear read deadline: %w", err)
 	}
 
-	go s.repeat(ctx, keepaliveInterval, kindKeepalive)
+	s.heard()
+	go s.pingLoop(ctx)
 
 	buffer := make([]byte, readBufferSize)
 	for {
@@ -163,11 +168,18 @@ func (s *Session) Run(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
+		// Every frame that authenticates is proof of life, whatever it carries.
+		s.heard()
+
 		switch kind {
 		case kindMessage:
 			s.events().Message(payload)
 		case kindTyping:
 			s.events().Typing(payload != "")
+		case kindPing:
+			s.send(kindPong, payload)
+		case kindPong:
+			s.receivePong(payload)
 		case kindPunch:
 			// The peer is still handshaking because our ack was lost.
 			s.send(kindAck, "")
@@ -199,20 +211,6 @@ func (s *Session) punchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-		}
-	}
-}
-
-func (s *Session) repeat(ctx context.Context, every time.Duration, kind byte) {
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.send(kind, "")
 		}
 	}
 }

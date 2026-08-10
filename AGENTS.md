@@ -53,6 +53,9 @@ a signature is a change to the contract.
 - **The codec is the only arbiter of who the peer is.** `Session.Open` accepts
   datagrams from any source and adopts the sender only when the frame
   authenticates. Endpoint discovery may propose candidates; it never decides.
+- **Liveness is a poll, not an event.** Nothing arrives to announce that
+  nothing is arriving, so `Session.Health` computes from a timestamp rather
+  than firing a callback. Any authenticated frame refreshes it.
 - **Never print network bytes raw.** Route them through `text.Safe` first.
 - **Publish the endpoint STUN observed, never the one requested.** Behind double
   NAT the external port of a UPnP mapping lives on a private WAN address and is
