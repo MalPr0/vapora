@@ -9,6 +9,9 @@ const (
 	kindAck       byte = 0x02
 	kindKeepalive byte = 0x03
 	kindMessage   byte = 0x04
+	// kindTyping carries "1" while the local user has an unsent line in
+	// progress and "" when they stop, so the peer can show it.
+	kindTyping byte = 0x05
 )
 
 var errEmptyFrame = errors.New("punch: empty frame")

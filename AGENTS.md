@@ -38,6 +38,7 @@ not the product and carries no compatibility promises.
 | `pkg/upnp` | SSDP discovery, device description, SOAP, mappings, NAT chain |
 | `pkg/diag` | The differential experiment attributing filtering to a router |
 | `pkg/text` | Sanitiser for anything from the network headed to a terminal |
+| `internal/tui` | The pixel art chat: screen, sprites, key decoding, raw mode |
 | `internal/chat` | Demo TCP chat for the UPnP path |
 
 `pkg/` is the shared contract: high coverage is expected there, and a change to
@@ -59,6 +60,12 @@ a signature is a change to the contract.
 - **A mapping lease is not a pinhole.** The UPnP lease governs the inner router;
   the outermost NAT expires its binding on inactivity, which is why the waiting
   side has to keep sending.
+- **The UI renders to a buffer, never straight to a terminal.** `tui.Draw`
+  takes a `State` and fills a `Screen`; only `Screen.Flush` touches the tty.
+  That split is what lets frames be asserted on in tests, and it is the reason
+  every layout bug so far was caught by a test rather than by eye.
+- **Ranging a string steps by bytes.** Every block glyph the sprites use is
+  three of them, so pixel art must range `[]rune(line)`.
 - **No real addresses in the repository.** Use RFC 5737 documentation ranges
   (`203.0.113.0/24`, `192.0.2.0/24`) for public addresses and generic RFC 1918
   ranges for private ones.

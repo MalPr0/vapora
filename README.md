@@ -97,6 +97,25 @@ There is no server and no host/client role: whoever starts first retries until
 the other shows up. While waiting, the socket keeps its NAT binding warm, since
 an idle mapping expires long before a person reads a message and reacts.
 
+### The chat
+
+Once the path opens, `punch` takes over the terminal with a full screen chat:
+a pixel art console drawn with half block characters and a fixed palette, the
+conversation in the middle, and an input line that renders itself.
+
+Each side is named after an animal, and both names are **derived from the shared
+secret** rather than chosen or sent. Every peer computes the same pair, so
+nobody can decide how they are labelled on the other's screen and no name has to
+be trusted over the wire.
+
+While the other side is writing, a courier runs in the footer and the line reads
+`BADGER is typing`. That state travels as its own encrypted frame, sent on the
+first keystroke and withdrawn when the line is sent or two seconds pass with no
+typing.
+
+The UI needs a terminal. Piped input, a CI job or a terminal that refuses raw
+mode all fall back to plain lines automatically, and `-plain` forces it.
+
 ### The secret in the invite
 
 The waiting socket accepts packets from any source, which is what lets an
@@ -167,6 +186,7 @@ pkg/pcp         PCP (RFC 6887) and NAT-PMP (RFC 6886)
 pkg/upnp        SSDP, device description, SOAP, port mappings, NAT chain
 pkg/diag        the differential experiment that attributes filtering
 pkg/text        sanitises what arrives from the network before a terminal sees it
+internal/tui    the pixel art chat: renderer, sprites, key decoding, raw mode
 internal/chat   the TCP chat used as the traffic probe for the UPnP path
 ```
 

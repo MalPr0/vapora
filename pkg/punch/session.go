@@ -8,8 +8,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/MalPr0/vapora/pkg/text"
 )
 
 const (
@@ -29,14 +27,37 @@ type Session struct {
 	codec  Codec
 	output io.Writer
 
-	mu      sync.RWMutex
-	peer    *net.UDPAddr
-	open    bool
-	pending []string
+	mu       sync.RWMutex
+	peer     *net.UDPAddr
+	open     bool
+	pending  []string
+	observer Observer
 }
 
 func NewSession(conn *net.UDPConn, codec Codec, output io.Writer) *Session {
-	return &Session{conn: conn, codec: codec, output: output}
+	return &Session{conn: conn, codec: codec, output: output, observer: writerObserver{output}}
+}
+
+// Observe redirects what arrives to a consumer that renders it itself.
+func (s *Session) Observe(observer Observer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observer = observer
+}
+
+func (s *Session) events() Observer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.observer
+}
+
+// SetTyping tells the peer whether a line is in progress here.
+func (s *Session) SetTyping(active bool) {
+	payload := ""
+	if active {
+		payload = "1"
+	}
+	s.send(kindTyping, payload)
 }
 
 func (s *Session) SetPeer(peer *net.UDPAddr) {
@@ -143,7 +164,9 @@ func (s *Session) Run(ctx context.Context) error {
 		}
 		switch kind {
 		case kindMessage:
-			fmt.Fprintf(s.output, "<peer> %s\n", text.Safe(payload))
+			s.events().Message(payload)
+		case kindTyping:
+			s.events().Typing(payload != "")
 		case kindPunch:
 			// The peer is still handshaking because our ack was lost.
 			s.send(kindAck, "")
