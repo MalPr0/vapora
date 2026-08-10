@@ -19,22 +19,60 @@ go run ./cmd/vapora punch    # print an invite and wait for a peer
 ## Install
 
 Every merge to `main` publishes a release with static binaries for macOS, Linux
-and Windows. Both peers need one, so handing the other side a link to the
-release page is usually easier than asking them to install Go.
+and Windows. Both peers need one, so a link to the release is usually easier
+than asking the other side to install Go.
+
+**Download with `curl`, not with a browser.** On macOS a browser marks whatever
+it downloads with `com.apple.quarantine`, and Gatekeeper then refuses to run a
+binary that Apple has not notarized. `curl` sets no such mark, so the binary
+just runs.
 
 ```bash
-tar -xzf vapora_<version>_<os>_<arch>.tar.gz
+# macOS, Apple Silicon
+curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_arm64.tar.gz | tar -xz
+
+# macOS, Intel
+curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_amd64.tar.gz | tar -xz
+
+# Linux, x86-64
+curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_linux_amd64.tar.gz | tar -xz
+
 ./vapora version
 ```
 
-`SHA256SUMS` ships with each release. Verify before running a binary you did not
-build: this is a tool that opens a port and talks to strangers.
+On Windows, download `vapora_windows_amd64.zip` from the release page and
+extract it.
+
+### Verify what you downloaded
+
+This tool opens a port and talks to strangers, so check the binary before
+running one you did not build. `SHA256SUMS` ships with every release.
 
 ```bash
-sha256sum -c SHA256SUMS --ignore-missing
+curl -fsSLO https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/MalPr0/vapora/releases/latest/download/SHA256SUMS
+
+shasum -a 256 -c SHA256SUMS --ignore-missing   # macOS
+sha256sum -c SHA256SUMS --ignore-missing       # Linux
 ```
 
-Or build it yourself, which needs nothing but a Go toolchain:
+### If you did download through a browser
+
+macOS will refuse to run it, with a dialog saying Apple could not verify the
+binary is free of malware. That is accurate: these releases are signed only
+ad-hoc, not with an Apple Developer ID, so Apple has verified nothing. Strip the
+quarantine mark yourself, but only after checking the checksum above:
+
+```bash
+xattr -d com.apple.quarantine ./vapora
+```
+
+Re-downloading with `curl` avoids the whole thing.
+
+### Or build it
+
+Needs nothing but a Go toolchain, and answers the trust question by not asking
+it:
 
 ```bash
 go build ./cmd/vapora

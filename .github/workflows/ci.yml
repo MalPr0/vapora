@@ -87,7 +87,12 @@ jobs:
               -ldflags "-s -w -X main.version=${VERSION}" \
               -o "build/${binary}" ./cmd/vapora
 
-            archive="vapora_${VERSION}_${os}_${arch}"
+            # The name carries no version on purpose: it is what makes
+            # /releases/latest/download/<name> a stable URL, and a stable URL is
+            # what lets people install with curl. A browser download would
+            # quarantine the binary and macOS would then refuse to run it.
+            # The version lives in the tag, and in `vapora version`.
+            archive="vapora_${os}_${arch}"
             if [ "$os" = "windows" ]; then
               (cd build && zip -q "../dist/${archive}.zip" "$binary")
             else
