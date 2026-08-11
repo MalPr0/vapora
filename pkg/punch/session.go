@@ -169,14 +169,19 @@ func (s *Session) handshake(frame Opened, from *net.UDPAddr) bool {
 		return false
 	}
 
-	peer := s.Peer()
-	if peer != nil && !sameEndpoint(peer, from) {
-		return false
-	}
-	if peer == nil {
-		// The invite went one way only and their packet still got in.
-		// Announcing it is the caller's business: a session that writes to a
-		// stream of its own lands in the middle of whatever a UI drew.
+	// Before a path exists, an authenticated punch settles where the peer is,
+	// wherever it came from. Only the two of them hold this key, so the address
+	// it arrived from is one that demonstrably works in that direction — which
+	// is more than any address either side was told about can claim.
+	//
+	// This is what lets a pair behind the same router meet: they are each given
+	// a public address that their router will not turn around, and the local
+	// one only proves itself by being punched from.
+	//
+	// It is not a way in for anyone else. handshake only runs while the path is
+	// still opening; once it is open, accept guards moves and refuses to follow
+	// one while the current path is alive.
+	if peer := s.Peer(); peer == nil || !sameEndpoint(peer, from) {
 		s.SetPeer(from)
 	}
 

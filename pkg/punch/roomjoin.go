@@ -59,13 +59,11 @@ func (r *Room) Reach(ctx context.Context, endpoint *net.UDPAddr) {
 }
 
 func (r *Room) helloLoop(ctx context.Context, endpoint *net.UDPAddr) {
-	hello := padded(r.identity.Public().Bytes())
-
 	ticker := time.NewTicker(helloInterval)
 	defer ticker.Stop()
 
 	for {
-		_ = r.mux.Send(r.roomCode.Seal(kindHello, hello), endpoint)
+		r.sayHello(endpoint)
 		select {
 		case <-ctx.Done():
 			return
@@ -95,6 +93,15 @@ func (r *Room) greet(payload []byte, from *net.UDPAddr) bool {
 		return true
 	}
 
+	if local := helloLocal(frame.Payload); local != nil {
+		// Only worth keeping when it is a private address on our own network:
+		// a public one from here is somebody describing themselves, which the
+		// address the datagram actually came from already says better.
+		if entry, known := r.member(key); known {
+			entry.candidates.consider(local)
+		}
+	}
+
 	entry, fresh, err := r.ensureMember(context.Background(), key, from)
 	if err != nil {
 		if err == ErrRoomFull {
@@ -115,7 +122,11 @@ func (r *Room) greet(payload []byte, from *net.UDPAddr) bool {
 // introduce names a newcomer to everyone else, and vice versa by way of the
 // roster the newcomer already got.
 func (r *Room) introduce(key PublicKey, addr *net.UDPAddr) {
-	entry := Roster{{Key: key, Addr: addr}}.Marshal()
+	local := (*net.UDPAddr)(nil)
+	if member, known := r.member(key); known {
+		local = member.candidates.localOf(addr)
+	}
+	entry := Roster{{Key: key, Addr: addr, Local: local}}.Marshal()
 
 	for _, member := range r.each() {
 		if member.key == key {
@@ -161,12 +172,28 @@ func (r *Room) merge(ctx context.Context, payload string) {
 		if entry.Key == r.identity.Public() {
 			continue
 		}
-		_, _, _ = r.ensureMember(ctx, entry.Key, entry.Addr)
+		member, _, err := r.ensureMember(ctx, entry.Key, entry.Addr)
+		if err != nil {
+			continue
+		}
+		// Every candidate the roster named is worth trying: which one works is
+		// a property of the two networks, not something either side can know.
+		for _, candidate := range entry.Candidates() {
+			member.candidates.consider(candidate)
+		}
 	}
 }
 
 // Bytes is the wire form of a key, which the hello carries raw rather than
 // encoded because a datagram has no reason to pay for base32.
+// helloLocal reads the address a hello carried after the key, if any.
+func helloLocal(payload string) *net.UDPAddr {
+	if len(payload) < PublicKeySize+candidateBytes {
+		return nil
+	}
+	return readCandidate([]byte(payload[PublicKeySize : PublicKeySize+candidateBytes]))
+}
+
 func (k PublicKey) Bytes() []byte {
 	out := make([]byte, PublicKeySize)
 	copy(out, k[:])

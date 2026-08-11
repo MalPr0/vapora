@@ -133,12 +133,30 @@ a signature is a change to the contract.
 - **An announcement nobody accepted is not an announcement.** Nodes answering is
   not the same as nodes taking the announcement, and reporting the first as
   success is how a rendezvous appears to work and never meets anyone.
+- **One address cannot describe everybody.** Two people behind the same router
+  cannot use each other's public address: that needs the router to send a packet
+  out and route it straight back in, which most home routers refuse for UDP. So
+  every member carries two candidates, public and local, and they are rotated
+  until one answers. A local address is meaningless from outside that network,
+  which is why neither replaces the other.
+- **An authenticated punch settles the address, but only before a path exists.**
+  It is the one place a session follows an address it was not expecting, and it
+  is what stops two sides rotating through candidates in antiphase forever. Only
+  the pair holds that key, so the address it arrived from is one that
+  demonstrably works. Once a path is open, `accept` guards moves and will not
+  follow one while the current path is alive — that is the hijack rule and it is
+  unchanged.
 - **A room only ever answers a hello.** Nothing is sent to an address the room
   has not heard from, so between two networks that both refuse a first packet
   from a stranger the newcomer's hello dies at the host's door and waiting
   longer never helps. `Room.Reach` is the way out and it is the room's version
   of the second invite `punch` sends: it carries no secret and grants nothing,
   it only makes this side start sending so its own router opens.
+- **Unrouted datagrams are offered to every session before being dropped.** The
+  mux routes by address; a member that moves or proves a second candidate
+  arrives from an address no route claims, `greet` cannot open a pair-key frame,
+  and without `adopt` it is discarded in silence. Offering it around is safe
+  because only the right pair key opens it.
 - **The gutter is a promise.** A nickname reaches thirty characters and the
   gutter is capped at twenty and at a third of the screen, so `fitName` cuts
   rather than pads: `%-*s` widens for a long name, which shifts that speaker's

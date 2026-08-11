@@ -79,6 +79,7 @@ func runRoom(args []string) error {
 	party, err := punch.NewRoom(punch.RoomOptions{
 		Identity: identity,
 		Secret:   secret,
+		Local:    punch.LocalAddr(conn.LocalAddr().(*net.UDPAddr).Port),
 		Mux:      mux,
 		Output:   os.Stdout,
 	})

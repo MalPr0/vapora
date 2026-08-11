@@ -29,9 +29,18 @@ type RoomObserver interface {
 }
 
 type roomMember struct {
-	key     PublicKey
-	session *Session
-	addr    *net.UDPAddr
+	key        PublicKey
+	session    *Session
+	candidates *candidates
+}
+
+// addr is where this member is currently believed to be. Once a path is open
+// the session knows better than the roster does, because it has proof.
+func (m *roomMember) addr() *net.UDPAddr {
+	if peer := m.session.Peer(); peer != nil {
+		return peer
+	}
+	return m.candidates.at()
 }
 
 // Room is a mesh of pair channels. Every member talks to every other one
@@ -41,6 +50,7 @@ type Room struct {
 	identity *Identity
 	secret   Secret
 	roomCode Codec
+	local    *net.UDPAddr
 	mux      *Mux
 	output   io.Writer
 	max      int
@@ -55,6 +65,10 @@ type RoomOptions struct {
 	Secret   Secret
 	Mux      *Mux
 	Output   io.Writer
+	// Local is where this side sits on its own network. It travels with every
+	// announcement so that somebody behind the same router has an address that
+	// does not need the router to turn a packet around.
+	Local *net.UDPAddr
 	// Max caps the room. Zero uses MaxMembers.
 	Max int
 }
@@ -94,9 +108,11 @@ func NewRoom(opts RoomOptions) (*Room, error) {
 		mux:      opts.Mux,
 		output:   opts.Output,
 		max:      opts.Max,
+		local:    opts.Local,
 		members:  map[PublicKey]*roomMember{},
 	}
 	opts.Mux.Fallback(SinkFunc(room.greet))
+	opts.Mux.Fallback(SinkFunc(room.adopt))
 	return room, nil
 }
 
@@ -135,7 +151,7 @@ func (r *Room) snapshot() []Member {
 		members = append(members, Member{
 			Key:    key,
 			Name:   names[key],
-			Addr:   entry.addr,
+			Addr:   entry.addr(),
 			Health: entry.session.Health(),
 		})
 	}
@@ -194,9 +210,44 @@ func (r *Room) roster() Roster {
 
 	roster := make(Roster, 0, len(r.members))
 	for key, entry := range r.members {
-		roster = append(roster, Entry{Key: key, Addr: entry.addr})
+		roster = append(roster, Entry{
+			Key:   key,
+			Addr:  entry.addr(),
+			Local: entry.candidates.localOf(entry.addr()),
+		})
 	}
 	return roster
+}
+
+// adopt offers a datagram from an unclaimed address to every member session.
+//
+// Without this a member that moves — a new address from the router, or a second
+// candidate that turns out to be the one that works — goes silent: its frames
+// arrive from an address no route claims, greet cannot open them because they
+// are sealed under a pair key rather than the room key, and they are dropped
+// without a word.
+//
+// Offering them around is safe because only the session holding the right pair
+// key can open one. The address is learned from proof, not from anybody's
+// say-so, and a frame that opens nowhere costs at most one failed decryption
+// per member, which the room's size caps.
+func (r *Room) adopt(payload []byte, from *net.UDPAddr) bool {
+	r.mu.RLock()
+	members := make([]*roomMember, 0, len(r.members))
+	for _, member := range r.members {
+		members = append(members, member)
+	}
+	r.mu.RUnlock()
+
+	for _, member := range members {
+		if member.session.Deliver(payload, from) {
+			// The session followed the move, so the address is worth a route:
+			// the next frame from it skips this whole search.
+			_ = r.mux.Route(from, member.session)
+			return true
+		}
+	}
+	return false
 }
 
 // ensureMember is the only way a member comes into being, so joining twice,
@@ -210,6 +261,9 @@ func (r *Room) ensureMember(ctx context.Context, key PublicKey, addr *net.UDPAdd
 	r.mu.Lock()
 	if existing, known := r.members[key]; known {
 		r.mu.Unlock()
+		// A known member reached from somewhere new is another candidate, not a
+		// move: the roster says where to try and only the pair key settles it.
+		existing.candidates.consider(addr)
 		return existing, false, nil
 	}
 	if len(r.members) >= r.max {
@@ -228,7 +282,7 @@ func (r *Room) ensureMember(ctx context.Context, key PublicKey, addr *net.UDPAdd
 	session.Observe(memberObserver{room: r, key: key})
 	session.Extra(func(frame Opened) bool { return r.roomFrame(ctx, key, frame) })
 
-	entry := &roomMember{key: key, session: session, addr: addr}
+	entry := &roomMember{key: key, session: session, candidates: newCandidates(addr)}
 
 	r.mu.Lock()
 	if existing, known := r.members[key]; known {
@@ -245,7 +299,17 @@ func (r *Room) ensureMember(ctx context.Context, key PublicKey, addr *net.UDPAdd
 
 	go session.Open(ctx, joinTimeout)
 	go session.Run(ctx)
+	go r.rotate(ctx, entry)
 	return entry, true, nil
+}
+
+// member looks one up without creating it.
+func (r *Room) member(key PublicKey) (*roomMember, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	entry, known := r.members[key]
+	return entry, known
 }
 
 func (r *Room) events() RoomObserver {

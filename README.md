@@ -212,6 +212,17 @@ Everyone runs `./vapora nat`, sends the short profile it prints, and one of you
 puts them all in that command. It says whether the room closes, who should open
 it, and — if some pair cannot reach each other at all — exactly which pair.
 
+### Two of you on the same network
+
+This works, and it is worth knowing why it is not obvious. Two computers behind
+the same router cannot reach each other through their public address: the
+packet would have to leave the router and come straight back in, and most home
+routers refuse to do that for UDP. So each participant announces **two**
+addresses — the one the world sees and the one their own network sees — and the
+pair tries both until one answers.
+
+You do not have to do anything. It settles itself within a few seconds.
+
 ### Finding each other without an address
 
 There is one more way in, and it is off by default:

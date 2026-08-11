@@ -7,8 +7,16 @@ import (
 	"net"
 )
 
-// entryBytes is a public key, an IPv4 address and a port.
-const entryBytes = PublicKeySize + 4 + 2
+// entryBytes is a public key and two candidates, each an IPv4 address and a
+// port: where the world sees this member, and where their own network does.
+//
+// Two candidates rather than one because a single address cannot describe
+// somebody behind the same router as you. Their public address is unreachable
+// from beside them, and their local one is meaningless from anywhere else.
+const (
+	candidateBytes = 4 + 2
+	entryBytes     = PublicKeySize + 2*candidateBytes
+)
 
 var ErrRosterTooLarge = errors.New("punch: roster names more members than a room holds")
 
@@ -17,8 +25,26 @@ var ErrRosterTooLarge = errors.New("punch: roster names more members than a room
 // An entry is a suggestion, never a proof. It says where to try punching; only
 // a frame that opens under the pair key says anybody is actually there.
 type Entry struct {
-	Key  PublicKey
+	Key PublicKey
+	// Addr is the address the outside world sees, which is the one that works
+	// for everybody except somebody sharing a router with this member.
 	Addr *net.UDPAddr
+	// Local is where this member sits on its own network, and is nil when it
+	// could not be worked out. It is meaningless from outside that network and
+	// is the only thing that works from inside it.
+	Local *net.UDPAddr
+}
+
+// Candidates is every address worth punching at, best first.
+func (e Entry) Candidates() []*net.UDPAddr {
+	var addrs []*net.UDPAddr
+	if e.Addr != nil {
+		addrs = append(addrs, e.Addr)
+	}
+	if e.Local != nil && !sameEndpoint(e.Local, e.Addr) {
+		addrs = append(addrs, e.Local)
+	}
+	return addrs
 }
 
 type Roster []Entry
@@ -29,12 +55,8 @@ func (r Roster) Marshal() string {
 
 	for _, entry := range r {
 		blob = append(blob, entry.Key[:]...)
-		if ipv4 := entry.Addr.IP.To4(); ipv4 != nil {
-			blob = append(blob, ipv4...)
-		} else {
-			blob = append(blob, 0, 0, 0, 0)
-		}
-		blob = binary.BigEndian.AppendUint16(blob, uint16(entry.Addr.Port))
+		blob = appendCandidate(blob, entry.Addr)
+		blob = appendCandidate(blob, entry.Local)
 	}
 	return padded(blob)
 }
@@ -65,16 +87,43 @@ func ParseRoster(payload string, max int) (Roster, error) {
 		if entry.Key.isZero() {
 			return nil, fmt.Errorf("%w: entry %d has no key", ErrMalformedRoster, i)
 		}
-		entry.Addr = &net.UDPAddr{
-			IP:   net.IPv4(record[32], record[33], record[34], record[35]),
-			Port: int(binary.BigEndian.Uint16(record[36:38])),
-		}
-		if entry.Addr.Port == 0 {
-			return nil, fmt.Errorf("%w: entry %d has no port", ErrMalformedRoster, i)
+
+		entry.Addr = readCandidate(record[PublicKeySize : PublicKeySize+candidateBytes])
+		entry.Local = readCandidate(record[PublicKeySize+candidateBytes:])
+		if entry.Addr == nil {
+			return nil, fmt.Errorf("%w: entry %d has nowhere to be reached", ErrMalformedRoster, i)
 		}
 		roster = append(roster, entry)
 	}
 	return roster, nil
+}
+
+// appendCandidate writes one address, or six zero bytes when there is none.
+// An absent candidate has to occupy its space so entries stay a fixed size.
+func appendCandidate(blob []byte, addr *net.UDPAddr) []byte {
+	if addr == nil {
+		return append(blob, 0, 0, 0, 0, 0, 0)
+	}
+	if ipv4 := addr.IP.To4(); ipv4 != nil {
+		blob = append(blob, ipv4...)
+	} else {
+		blob = append(blob, 0, 0, 0, 0)
+	}
+	return binary.BigEndian.AppendUint16(blob, uint16(addr.Port))
+}
+
+// readCandidate reads one address back, and reports nothing for the zeroes an
+// absent one leaves behind.
+func readCandidate(record []byte) *net.UDPAddr {
+	port := binary.BigEndian.Uint16(record[4:6])
+	if port == 0 {
+		return nil
+	}
+	ip := net.IPv4(record[0], record[1], record[2], record[3])
+	if ip.IsUnspecified() {
+		return nil
+	}
+	return &net.UDPAddr{IP: ip, Port: int(port)}
 }
 
 var ErrMalformedRoster = errors.New("punch: malformed roster")
