@@ -59,6 +59,8 @@ func run(args []string) error {
 		return runNAT(args)
 	case "punch":
 		return runPunch(args)
+	case "room":
+		return runRoom(args)
 	case "diag":
 		return runDiag(args)
 	case "version", "-v", "--version":
@@ -80,6 +82,8 @@ func printUsage() {
   vapora diag                  find out which of your routers filters, and how
   vapora punch                 print an invite and wait for a friend to join
   vapora punch <host:port/key> join with the invite a friend sent you
+  vapora room                  open a room for several people and print an invite
+  vapora room <invite>         join a room with the invite somebody sent you
   vapora probe                 discover the gateway and show its external IP
   vapora serve [-port 40404]      map a port via UPnP and host an authenticated chat
   vapora connect <host:port/key>  join a chat with the invite its host printed
@@ -90,6 +94,13 @@ punch flags:
   -timeout    how long to keep punching before giving up (default 3m)
   -keepalive  how often to refresh the NAT binding while waiting (default 25s)
   -plain      skip the full screen UI and use plain lines
+
+room flags:
+  -port       local UDP port, 0 lets the OS choose
+  -timeout    how long to keep trying before giving up (default 3m)
+  -keepalive  how often to refresh the NAT binding (default 25s)
+  commands:   !who lists who is present, !invite prints a fresh invite,
+              !exit leaves
 
 diag flags:
   -only      run just one part: pcp or filter

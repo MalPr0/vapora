@@ -234,6 +234,44 @@ travel from your address to theirs, so each end learns the other's IP. That is
 what direct means. Hiding that would require relaying every packet through a
 third party, which is the opposite of what this tool does.
 
+## Rooms
+
+`vapora punch` is for two people and does not change. A room is a separate
+command, because a mesh needs a different handshake and a different invite, and
+folding the two would mean two ways for each to go wrong.
+
+```bash
+vapora room                  # open one and print an invite
+vapora room <invite>         # join with an invite anyone in it sent you
+```
+
+Everyone talks to everyone **directly**. Whoever introduces two people never
+carries a word between them and could not read it if it tried: each pair derives
+its own channel from an X25519 agreement, and the invite secret is demoted to
+sealing exactly one frame, the hello of somebody arriving.
+
+That is also what makes the introduction the whole job. Naming a newcomer to
+each member is enough, because it gets both sides punching at the same moment,
+which is exactly what a port restricted NAT needs. For the third person onward,
+an established room **is** the rendezvous.
+
+**Anyone can invite**, including somebody who just joined, and the room converges
+by gossip rather than by asking whoever started it. Nothing anybody says about
+the room is believed: a roster entry is an address worth punching at, never
+proof that somebody is there. Only a frame that opens under the pair key makes
+anybody a member, so a member that lies about who is present wastes packets and
+nothing else.
+
+Names come from keys, so everyone calls everyone the same thing without a word
+being sent about it. Only as much of a name is shown as tells apart who is
+present: three people see OTTER, BADGER and HERON, and the colour and adjective
+appear when two would otherwise collide. `@name` marks a line as addressed to
+you. `!who` lists the room, `!invite` prints a fresh invite, `!exit` leaves.
+
+Rooms hold eight. Seven pairs at one ping every five seconds is under three
+packets a second, and twenty eight punched paths is where restrictive NATs start
+failing in earnest.
+
 ## The UPnP path
 
 `serve` maps a port and hosts a chat on it; `connect` joins. That port is
