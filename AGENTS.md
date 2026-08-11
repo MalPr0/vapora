@@ -72,6 +72,10 @@ and that separation is load-bearing rather than tidy:
 - **A `punch.Member` has no name.** What to call somebody is presentation, and
   an application with its own idea of identity should not have to work around
   this one. `pkg/names` derives one from a key for anybody who wants it.
+- **The Pong tutorial's skeleton is checked by running it.** The forty line
+  program on that page was extracted from the markdown, compiled, and run
+  between two processes. A tutorial whose first snippet does not work loses the
+  reader on the first step, and that is the snippet most likely to rot.
 - **Documentation that shows code is checked by the compiler.** Every snippet in
   `ARCHITECTURE.md` lives in `examples/apitour`, so a signature change breaks the
   build rather than leaving a page that quietly lies. Two snippets were wrong the

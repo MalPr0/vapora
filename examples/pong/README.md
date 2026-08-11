@@ -15,6 +15,15 @@ something that is nothing like a chat.
 
 ---
 
+**Contents** · [Run it](#run-it) · [The smallest version](#step-0--the-smallest-thing-that-runs) ·
+[The idea](#the-idea-that-makes-it-work) · [Open a channel](#step-1--open-a-channel) ·
+[Who is right](#step-2--decide-who-is-right) · [Your own wire](#step-3--define-your-own-wire) ·
+[Trust nothing](#step-4--refuse-to-trust-what-arrives) · [The loop](#step-5--the-loop) ·
+[Say what is happening](#step-6--say-what-the-connection-is-doing) ·
+[What it proved](#what-this-proved) · [Take it further](#take-it-to-your-own-game)
+
+---
+
 ## Run it
 
 ```bash
@@ -59,6 +68,81 @@ Then the court, which is the whole game:
   ───────────────────────────────────────
   w/s moves  ·  r resets  ·  47ms  ·  q quits          powered by vapora
 ```
+
+---
+
+## Step 0 · The smallest thing that runs
+
+Before the game, the skeleton. This is a complete program: two copies of it on
+two machines, anywhere on the internet, sending each other bytes.
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "net"
+    "os"
+    "time"
+
+    "github.com/MalPr0/vapora/pkg/punch"
+    "github.com/MalPr0/vapora/pkg/stun"
+)
+
+func main() {
+    ctx := context.Background()
+    conn, _ := net.ListenUDP("udp4", &net.UDPAddr{})
+
+    // Host mints a secret; guest gets it from the invite.
+    secret, role := punch.Secret(nil), punch.RoleInviter
+    var peer *net.UDPAddr
+    if len(os.Args) > 1 {
+        invite, _ := punch.ParseInvite(os.Args[1])
+        secret, role, peer = invite.Secret, punch.RoleJoiner, invite.Endpoint
+    } else {
+        secret, _ = punch.NewSecret()
+    }
+
+    codec, _ := punch.NewSecretCodec(secret, role)
+
+    mux := punch.NewMux(conn)
+    watcher := stun.NewWatcher(stun.DefaultServers, stun.DefaultKeepalive)
+    mux.Fallback(punch.SinkFunc(watcher.Handle))
+
+    session := punch.NewSession(mux, codec, nil)
+    mux.Fallback(session)
+    if peer != nil {
+        session.SetPeer(peer)
+    }
+
+    session.Observe(punch.ObserverFunc(func(payload []byte) {
+        fmt.Println("←", string(payload))
+    }))
+
+    go mux.Run(ctx)
+    go watcher.Run(ctx, conn)
+    go session.Run(ctx)
+
+    if peer == nil {
+        endpoint, _ := watcher.Wait(ctx, 15*time.Second)
+        fmt.Printf("run: go run . %s/%s\n", endpoint, secret)
+    }
+
+    if err := session.Open(ctx, 3*time.Minute); err != nil {
+        fmt.Println("no path:", err)
+        return
+    }
+
+    for range time.Tick(time.Second) {
+        session.Send([]byte("hola"))
+    }
+}
+```
+
+Forty lines, no dependencies, and the hard part — two routers that both refuse
+strangers — is already handled. Everything after this is your program, not the
+network.
 
 ---
 
@@ -301,20 +385,73 @@ go test ./examples/pong/ -race
 
 ---
 
+## What playing it taught us
+
+Three full matches between two people, and every lesson was about the game
+rather than the channel.
+
+**A still paddle beat a person 7-6.** The first build had a paddle covering 16%
+of the court and a ball that barely changed angle. Nothing was broken; there was
+simply no difficulty in it. Slower ball, smaller ball, and eleven points to win.
+
+**Chasing the ball loses to anticipating it.** One side was played by a script
+reading the screen every 120ms and moving towards wherever the ball currently
+was. At 12 units a tick and 30 ticks a second the ball travels **43 units
+between one look and the next**, so the paddle was permanently aiming at where
+the ball had been. It went 4-1 up and lost 4-11 the moment the other player
+started using angles.
+
+That is the same problem every networked game has, in miniature. It is why real
+ones **predict** rather than follow, and it is what the missing pieces below are
+for.
+
+---
+
 ## What is missing, honestly
 
-This is a tutorial, not a shipped game.
+This is a tutorial, not a shipped game. None of it is about the channel.
 
-- **No interpolation.** At 30 ticks the ball steps rather than glides. Real
-  games interpolate between the last two states.
-- **No prediction.** The guest's paddle waits a round trip. Over 200ms that is
-  felt; real games move locally and reconcile.
-- **The host decides everything**, so the host cannot lose to lag and the guest
-  cannot win because of it. Fine among friends, not fine for anything ranked.
-- **Terminal handling is unix only.** The `pkg/` half is portable; termios is
-  not.
+| Missing | What it would take |
+|---|---|
+| **Interpolation** | At 30 ticks the ball steps rather than glides. Draw between the last two states instead of on top of the newest. |
+| **Prediction** | The guest's paddle waits a round trip; over 200ms that is felt. Move locally at once, reconcile when the host's version arrives. |
+| **A fair authority** | The host cannot lose to lag and the guest cannot win because of it. Fine among friends, not fine for anything ranked. |
+| **Windows** | The `pkg/` half is portable. termios is not. |
 
-None of that is about the channel. All of it is the part you would write next.
+---
+
+## Take it to your own game
+
+The parts of this that are not about Pong:
+
+- **Send state, not events**, whenever the newest message makes the older ones
+  irrelevant. It buys you immunity to packet loss for free.
+- **Put your tags inside the payload.** The transport gives you one frame kind;
+  your numbering lives under it and cannot collide with anything.
+- **Pick one owner per fact.** The ball has exactly one, the guest's paddle has
+  exactly one. Anything with two owners will disagree, and then you are writing
+  a consensus algorithm instead of a game.
+- **Bound and clamp everything that arrives.** The transport proves who sent it,
+  never that it makes sense.
+- **Never block in the observer.** Hand off to a channel and drop when full: for
+  state, the newest is along in a moment and the backlog is worth nothing.
+- **Show the connection.** `session.Health()` gives you round trip and silence.
+  A game that freezes without saying why gets blamed for the network.
+
+---
+
+## The files
+
+| | |
+|---|---|
+| [`main.go`](main.go) | The network setup, and the only part about the internet |
+| [`wire.go`](wire.go) | The protocol: three tags and eleven bytes |
+| [`game.go`](game.go) | The rules, which run on the host only |
+| [`play.go`](play.go) | The loop, identical on both sides |
+| [`screen.go`](screen.go) | Half-block drawing |
+| [`splash.go`](splash.go) | The wordmarks |
+| [`keys.go`](keys.go) | Raw mode, about thirty lines of termios |
+| [`pong_test.go`](pong_test.go) | The checks in the table above |
 
 ---
 

@@ -276,20 +276,59 @@ Honest limitations, not fine print.
 
 ---
 
-## Example implementations
+## How you can use this
 
-Two programs built on the same channel, doing opposite things with it. Both are
-short enough to read in a sitting, and both are here to be copied.
+The chat is one thing built on the channel. Here is another, in forty lines:
+two copies of this program, on two machines anywhere on the internet, sending
+each other bytes with nothing in between.
 
-| | |
-|---|---|
-| **[Pong](examples/pong)** — a tutorial | Two players, two houses, no server. Sends **state** thirty times a second and only cares about the last one. Comes with a step-by-step walkthrough. |
-| **[filedrop](examples/filedrop)** | Moves a file between two machines. No chat, no nicknames, no terminal. |
-| **`vapora punch` / `room`** | The chat in this repo. Sends **events**, where every one matters. |
+```go
+conn, _ := net.ListenUDP("udp4", &net.UDPAddr{})
 
-That a game and a conversation want opposite things from the same transport —
-freshness versus delivery — and that neither needed the transport to change, is
-the clearest evidence the layering is real.
+codec, _ := punch.NewSecretCodec(secret, punch.RoleInviter)
+mux := punch.NewMux(conn)
+session := punch.NewSession(mux, codec, nil)
+mux.Fallback(session)
+
+session.Observe(punch.ObserverFunc(func(payload []byte) {
+    fmt.Println("←", string(payload))       // whatever they sent, exactly
+}))
+
+go mux.Run(ctx)
+go session.Run(ctx)
+
+session.Open(ctx, 3*time.Minute)             // punch through both routers
+session.Send([]byte("hola"))
+```
+
+### 🏓 Start here: [**build a Pong game**](examples/pong)
+
+A step-by-step tutorial that goes from that skeleton to a real two-player game
+across the internet — its own wire format, who is allowed to be right about
+what, and why a game survives packet loss that would ruin a conversation.
+
+```
+  QUAIL 7   —   6 WAPITI
+  ───────────────────────────────────────
+    █                    ▄
+    █                    █             █
+                                       █
+  ───────────────────────────────────────
+  w/s moves · r resets · 47ms · q quits        powered by vapora
+```
+
+### The three, side by side
+
+| | Sends | Cares about |
+|---|---|---|
+| **[Pong](examples/pong)** — tutorial | **state**, 30×/second | only the newest. A lost packet costs one frame |
+| **[filedrop](examples/filedrop)** | **blocks** of a file | all of them, in the right places |
+| **`vapora punch` / `room`** | **events** — lines of text | every single one |
+
+A game and a conversation want opposite things from the same transport —
+freshness against delivery — and neither needed the transport to change. That is
+the clearest evidence the layering is real, and it is why building on it does
+not mean inheriting anybody else's decisions.
 
 ---
 
