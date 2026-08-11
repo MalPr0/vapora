@@ -74,11 +74,26 @@ type SecretCodec struct {
 }
 
 func NewSecretCodec(secret Secret, role Role) (*SecretCodec, error) {
-	sealAEAD, err := aeadFor(secret, role)
+	sealKey, err := deriveKey(secret, nil, keyInfo+string(role))
 	if err != nil {
 		return nil, err
 	}
-	openAEAD, err := aeadFor(secret, role.other())
+	openKey, err := deriveKey(secret, nil, keyInfo+string(role.other()))
+	if err != nil {
+		return nil, err
+	}
+	return newCodec(sealKey, openKey)
+}
+
+// newCodec is the shared construction: two keys in, one channel out. What the
+// keys were derived from is the caller's business, which is what lets a room
+// secret and an X25519 agreement produce the same kind of channel.
+func newCodec(sealKey, openKey []byte) (*SecretCodec, error) {
+	sealAEAD, err := newAEAD(sealKey)
+	if err != nil {
+		return nil, err
+	}
+	openAEAD, err := newAEAD(openKey)
 	if err != nil {
 		return nil, err
 	}
@@ -94,15 +109,18 @@ func NewSecretCodec(secret Secret, role Role) (*SecretCodec, error) {
 	return codec, nil
 }
 
-func aeadFor(secret Secret, role Role) (cipher.AEAD, error) {
-	// The secret is full entropy from crypto/rand, so a KDF is all that is
-	// needed here; password stretching would be solving a problem we do not
-	// have.
-	key, err := hkdf.Key(sha256.New, secret, nil, keyInfo+string(role), keyBytes)
+// deriveKey turns key material into one channel key. The material is always
+// full entropy, from crypto/rand or from X25519, so a KDF is all that is needed
+// here; password stretching would be solving a problem we do not have.
+func deriveKey(material, salt []byte, info string) ([]byte, error) {
+	key, err := hkdf.Key(sha256.New, material, salt, info, keyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("punch: cannot derive the %s key: %w", role, err)
+		return nil, fmt.Errorf("punch: cannot derive the %q key: %w", info, err)
 	}
+	return key, nil
+}
 
+func newAEAD(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("punch: cannot build the cipher: %w", err)
