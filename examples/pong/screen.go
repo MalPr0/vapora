@@ -83,7 +83,9 @@ func (s *screen) draw(state State) {
 	s.paddle(scaleX(paddleInset), state.LeftY)
 	s.paddle(scaleX(fieldWidth-paddleInset), state.RightY)
 
-	s.rect(scaleX(int(state.BallX)), scaleY(int(state.BallY)), 2, 2)
+	// One column wide and two pixel rows tall, which is one terminal cell and
+	// therefore square on screen.
+	s.rect(scaleX(int(state.BallX)), scaleY(int(state.BallY)), 1, 2)
 }
 
 func (s *screen) paddle(x int, centre uint16) {

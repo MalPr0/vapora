@@ -16,8 +16,8 @@ type game struct {
 const (
 	paddleHeight = 160
 	paddleSpeed  = 26
-	ballSpeed    = 14
-	winningScore = 7
+	ballSpeed    = 12
+	winningScore = 11
 )
 
 func newGame() *game {
@@ -109,6 +109,15 @@ func (g *game) move(player int, delta int) {
 		position = fieldHeight
 	}
 	g.paddle[player] = uint16(position)
+}
+
+// reset starts the match over: scores to nothing, ball in the middle. Only the
+// host runs it, and the guest learns about it from the next state like it
+// learns about everything else.
+func (g *game) reset() {
+	g.state.LeftScore = 0
+	g.state.RightScore = 0
+	g.serve(1)
 }
 
 func (g *game) finished() bool {

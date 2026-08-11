@@ -22,10 +22,10 @@ go run ./examples/pong host          # prints an invite, waits
 go run ./examples/pong join <invite> # the other machine
 ```
 
-`w`/`s` moves. `q` quits. That is the whole game.
+`w`/`s` moves, `r` starts again, `q` quits. First to eleven.
 
 ```
-  CRIMSON OTTER 3   —   2 JADE HERON
+  CRIMSON OTTER 7   —   6 JADE HERON
   ───────────────────────────────────────
                                           
     █                  ██                 
@@ -34,7 +34,7 @@ go run ./examples/pong join <invite> # the other machine
     █                                  █  
                                           
   ───────────────────────────────────────
-  w/s moves  ·  47ms  ·  q quits
+  w/s moves  ·  r resets  ·  47ms  ·  q quits
 ```
 
 ---
@@ -133,8 +133,14 @@ transport's can never collide.
 const (
     tagPaddle byte = 1   // guest → host
     tagState  byte = 2   // host  → guest
+    tagReset  byte = 3   // guest → host: start again
 )
 ```
+
+A reset shows the design paying off. The guest cannot reset anything — only the
+host simulates — so it sends one byte asking, and then learns the new score from
+the next state, like it learns everything else. No acknowledgement, no special
+case, no way for the two sides to disagree about whether it happened.
 
 The whole world is eleven bytes, twelve with the tag in front:
 
@@ -260,6 +266,7 @@ The tests beside this file are the point of the exercise:
 | `TestALostPacketCostsNothing` | a state survives its own encoding whole, which is why nothing needs retransmitting |
 | `TestNonsenseFromTheNetworkIsRefused` | wrong lengths dropped, impossible positions clamped |
 | `TestATickIsSmall` | eleven bytes, which is why 30/second is nothing |
+| `TestEitherSideCanAskToStartAgain` | the guest asks, the host decides, the new score arrives as ordinary state |
 
 They build their sessions through the exported API only, exactly as the game
 does. If a game could not be assembled from outside the transport, the layering

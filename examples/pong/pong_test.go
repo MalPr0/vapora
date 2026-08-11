@@ -195,3 +195,59 @@ func TestATickIsSmall(t *testing.T) {
 		t.Fatalf("a paddle update is %d bytes", size)
 	}
 }
+
+// Either side can ask to start again, but only the host decides. The guest
+// sends the shortest message in the protocol and learns the new score the same
+// way it learns everything else: from the next state.
+func TestEitherSideCanAskToStartAgain(t *testing.T) {
+	host, guest := linked(t)
+
+	world := newGame()
+	world.state.LeftScore = 9
+	world.state.RightScore = 4
+
+	guest.session.Send(encodeReset())
+
+	select {
+	case payload := <-host.incoming:
+		if !isReset(payload) {
+			t.Fatalf("the host did not recognise a reset: %v", payload)
+		}
+		world.reset()
+	case <-time.After(2 * time.Second):
+		t.Fatal("the reset never reached the host")
+	}
+
+	if world.state.LeftScore != 0 || world.state.RightScore != 0 {
+		t.Fatalf("the score survived a reset: %+v", world.state)
+	}
+
+	// And the guest sees it without being told anything else.
+	host.session.Send(encodeState(world.state))
+	select {
+	case payload := <-guest.incoming:
+		state, ok := decodeState(payload)
+		if !ok || state.LeftScore != 0 || state.RightScore != 0 {
+			t.Fatalf("the guest did not see the reset: %+v", state)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no state followed the reset")
+	}
+}
+
+// A reset is one byte and must not be mistaken for anything else, in either
+// direction.
+func TestResetIsNotConfusedWithAPaddle(t *testing.T) {
+	if _, ok := decodePaddle(encodeReset()); ok {
+		t.Fatal("a reset was read as a paddle")
+	}
+	if _, ok := decodeState(encodeReset()); ok {
+		t.Fatal("a reset was read as a state")
+	}
+	if isReset(encodePaddle(500)) {
+		t.Fatal("a paddle was read as a reset")
+	}
+	if isReset(encodeState(State{})) {
+		t.Fatal("a state was read as a reset")
+	}
+}

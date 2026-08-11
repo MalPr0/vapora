@@ -54,13 +54,23 @@ func (t *table) play(ctx context.Context, hosting bool) error {
 				world.move(me, -paddleSpeed)
 			case 's', 'j':
 				world.move(me, paddleSpeed)
+			case 'r':
+				if hosting {
+					world.reset()
+				} else {
+					// The guest asks; the host is the one who decides.
+					t.session.Send(encodeReset())
+				}
 			}
 
 		case payload := <-t.incoming:
 			if hosting {
-				// The only thing the host believes from the network.
+				// The only two things the host believes from the network.
 				if y, ok := decodePaddle(payload); ok {
 					world.paddle[1] = y
+				}
+				if isReset(payload) {
+					world.reset()
 				}
 				continue
 			}
@@ -98,12 +108,12 @@ func (t *table) status(world *game, hosting bool) string {
 		if (world.state.RightScore >= winningScore) == hosting {
 			winner = t.them
 		}
-		return winner + " wins  ·  q quits"
+		return winner + " wins  ·  r plays again  ·  q quits"
 	case health.Link == punch.LinkLost:
 		return "\x1b[38;5;196mconnection lost\x1b[0m\x1b[38;5;250m  ·  q quits"
 	case health.Link == punch.LinkStale:
 		return fmt.Sprintf("no reply for %ds  ·  q quits", int(health.Silence.Seconds()))
 	default:
-		return fmt.Sprintf("w/s moves  ·  %dms  ·  q quits", health.RTT.Milliseconds())
+		return fmt.Sprintf("w/s moves  ·  r resets  ·  %dms  ·  q quits", health.RTT.Milliseconds())
 	}
 }

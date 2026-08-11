@@ -10,6 +10,7 @@ import "encoding/binary"
 const (
 	tagPaddle byte = 1 // joiner → host: where my paddle is
 	tagState  byte = 2 // host → joiner: everything else
+	tagReset  byte = 3 // joiner → host: start again
 )
 
 // Field is the play area in game units. Positions travel as fractions of it, so
@@ -85,6 +86,15 @@ func decodePaddle(payload []byte) (uint16, bool) {
 	}
 	return clamp16(binary.BigEndian.Uint16(payload[1:]), fieldHeight), true
 }
+
+// isReset reads the shortest message in the protocol. Only the host simulates,
+// so the guest cannot reset anything on its own — it asks, and the new score
+// arrives on the next tick like everything else does.
+func isReset(payload []byte) bool {
+	return len(payload) == 1 && payload[0] == tagReset
+}
+
+func encodeReset() []byte { return []byte{tagReset} }
 
 func clamp16(value, most uint16) uint16 {
 	if value > most {
