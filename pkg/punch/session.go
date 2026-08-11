@@ -46,6 +46,7 @@ type Session struct {
 	knownSender  bool
 	departed     bool
 	probes       probeCount
+	extra        func(Opened) bool
 }
 
 func NewSession(wire Wire, codec Codec, output io.Writer) *Session {
@@ -108,6 +109,17 @@ func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 			return ctx.Err()
 		}
 		return ErrPunchTimeout
+	}
+}
+
+// Established waits for the path to open without starting another punch loop,
+// which is what a caller wants when something else already started one.
+func (s *Session) Established(ctx context.Context) error {
+	select {
+	case <-s.opened:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -205,6 +217,26 @@ func (s *Session) handle(frame Opened) {
 	case kindPunch:
 		// The peer is still handshaking because our ack was lost.
 		s.send(kindAck, pad())
+	default:
+		s.handleExtra(frame)
+	}
+}
+
+// Extra handles frames whose kind this session does not know, which is how a
+// room carries its own protocol over a pair channel without decrypting twice.
+func (s *Session) Extra(handler func(Opened) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.extra = handler
+}
+
+func (s *Session) handleExtra(frame Opened) {
+	s.mu.RLock()
+	handler := s.extra
+	s.mu.RUnlock()
+
+	if handler != nil {
+		handler(frame)
 	}
 }
 
