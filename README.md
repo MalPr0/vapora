@@ -295,6 +295,32 @@ reports and `diag` attributes to a specific router.
   it back into the waiting terminal completes the handshake. Pasting works at
   any moment while it waits, and the whole line can be pasted as is.
 
+### Asking whether it will work at all
+
+A measurement of one end cannot answer that: reaching somebody is a property of
+the two networks together, not of either one. So `nat` and `diag` end with a
+short code for this side, meant to be pasted to the other:
+
+```
+your profile: CONE-PORT-18
+```
+
+Send it, get theirs back, and pair them:
+
+```bash
+vapora nat -pair CONE-OPEN-64
+```
+
+That says what to expect before anyone wastes half an hour on it: whether a
+direct path is reachable at all, whether one invite is enough or both have to be
+exchanged, and **which side has to be the one waiting**. The last one matters
+more than it sounds: two people who both wait for each other wait forever, and
+that failure looks exactly like a network problem.
+
+A symmetric NAT is the one verdict that is definitively negative on its own,
+because a side that hands out a new port per destination cannot be told where to
+aim. Everything else is a prediction; the only proof is trying.
+
 `diag` exists because a STUN report only describes the whole chain end to end.
 Behind two cascaded NATs it cannot say which one is restrictive, so `diag` runs
 an experiment instead of a measurement: it installs a UPnP mapping for one

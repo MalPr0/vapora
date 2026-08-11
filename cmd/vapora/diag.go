@@ -56,6 +56,7 @@ func runDiag(args []string) error {
 	gateway := flags.String("gateway", "", "probe this address instead of searching")
 	upstream := flags.String("upstream", "", "address of the upstream router when behind double NAT")
 	only := flags.String("only", "", "run just one part: pcp or filter")
+	pair := flags.String("pair", "", "combine with the profile the other side reported")
 	subjectPort := flags.Int("port", 0, "local UDP port for the subject socket, 0 lets the OS choose")
 	externalPort := flags.Int("external", 0, "external port to ask the IGD for, 0 mirrors the subject port")
 	if err := flags.Parse(args); err != nil {
@@ -92,5 +93,8 @@ func runDiag(args []string) error {
 	// The classification runs either way: it is what says whether punching can
 	// work at all, and it needs nothing from any router.
 	fmt.Println()
+	if *pair != "" {
+		return runNAT([]string{"-pair", *pair})
+	}
 	return runNAT(nil)
 }
