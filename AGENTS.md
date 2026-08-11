@@ -117,6 +117,11 @@ a signature is a change to the contract.
   terminal, and a cut invite looks copyable and decodes to nothing. The view
   wraps it and `joinToken` puts it back together on paste — a wrapped invite
   arriving by chat is the normal case, not the edge case.
+- **The gutter is a promise.** A nickname reaches thirty characters and the
+  gutter is capped at twenty and at a third of the screen, so `fitName` cuts
+  rather than pads: `%-*s` widens for a long name, which shifts that speaker's
+  text right and pushes its tail off the edge, where `Screen.Text` drops it
+  without a word.
 - **Ranging a string steps by bytes.** Every block glyph the sprites use is
   three of them, so pixel art must range `[]rune(line)`.
 - **No real addresses in the repository.** Use RFC 5737 documentation ranges

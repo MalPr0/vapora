@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,21 +18,59 @@ type Participant struct {
 // gutterFor sizes the column the speaker names sit in. A fixed width either
 // truncates the long names a crowded room produces or wastes a third of the
 // screen in a quiet one.
-func gutterFor(state State) int {
-	widest := len(state.Me)
+//
+// It is capped against the screen as well as by a constant, because a nickname
+// can reach thirty characters and no name is worth a third of the conversation.
+func gutterFor(state State, width int) int {
+	widest := TextWidth(state.Me)
 	for _, member := range state.Members {
-		if width := TextWidth(member.Name); width > widest {
-			widest = width
+		if size := TextWidth(member.Name); size > widest {
+			widest = size
 		}
 	}
 
-	return clampInt(widest+2, minGutter, maxGutter)
+	most := maxGutter
+	if third := width / 3; third < most {
+		most = third
+	}
+	if most < minGutter {
+		most = minGutter
+	}
+	return clampInt(widest+2, minGutter, most)
 }
 
 const (
 	minGutter = 10
-	maxGutter = 16
+	maxGutter = 20
 )
+
+// fitName renders a speaker into exactly the gutter. Padding alone is not
+// enough: `%-*s` widens for a long name instead of cutting it, which pushes the
+// body out of its column and off the right edge, losing the tail of the line.
+//
+// A cut name keeps a mark, because a clean truncation of "RESTLESS PERIWINKLE
+// SALAMANDER" reads as somebody else, and in a room a name has to mean one
+// person.
+func fitName(name string, gutter int) string {
+	if name == "" {
+		return strings.Repeat(" ", gutter)
+	}
+	if TextWidth(name) <= gutter {
+		return name + strings.Repeat(" ", gutter-TextWidth(name))
+	}
+
+	// One column for the mark and one to keep clear of the body, which the
+	// short names get for free from their padding.
+	runes := []rune(name)
+	cut := gutter - 2
+	if cut < 1 {
+		cut = 1
+	}
+	for TextWidth(string(runes[:cut]))+2 > gutter && cut > 1 {
+		cut--
+	}
+	return string(runes[:cut]) + "… "
+}
 
 // headerRows is how tall the header has to be to list everyone. It stops being
 // a constant the moment there is more than one other person, and every place

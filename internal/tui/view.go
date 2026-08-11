@@ -175,7 +175,7 @@ func drawMessages(screen *Screen, state State, width, height, top int) {
 		return
 	}
 
-	gutter := gutterFor(state)
+	gutter := gutterFor(state, width)
 	lines := wrapMessages(state, width-4, gutter)
 	visible, scroll, more := window(lines, area, state.Scroll)
 
@@ -190,11 +190,9 @@ func drawMessages(screen *Screen, state State, width, height, top int) {
 		}
 		x = 2
 		if line.speaker != "" {
-			tag := fmt.Sprintf("%-*s", gutter, line.speaker)
-			x += screen.Text(x, y, tag, line.color, Navy)
-		} else {
-			x += gutter
+			screen.Text(x, y, fitName(line.speaker, gutter), line.color, Navy)
 		}
+		x += gutter
 		screen.Text(x, y, line.body, line.bodyColor, Navy)
 	}
 
@@ -236,7 +234,7 @@ func MaxScroll(state State, width, height int) int {
 	if area < 1 {
 		return 0
 	}
-	if maximum := len(wrapMessages(state, width-4, gutterFor(state))) - area; maximum > 0 {
+	if maximum := len(wrapMessages(state, width-4, gutterFor(state, width))) - area; maximum > 0 {
 		return maximum
 	}
 	return 0

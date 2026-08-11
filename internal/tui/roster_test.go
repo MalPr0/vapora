@@ -116,20 +116,20 @@ func TestTypingLineNamesWhoItCan(t *testing.T) {
 // The gutter follows the longest name present. A fixed width either truncates
 // the names a crowded room produces or wastes a third of a quiet screen.
 func TestGutterFollowsTheLongestName(t *testing.T) {
-	narrow := gutterFor(State{Me: "OTTER", Members: only("BADGER")})
+	narrow := gutterFor(State{Me: "OTTER", Members: only("BADGER")}, 80)
 	if narrow != minGutter {
 		t.Fatalf("short names took a %d column gutter, want %d", narrow, minGutter)
 	}
 
 	wide := gutterFor(State{Me: "OTTER", Members: []Participant{
 		{Name: "SWIFT CRIMSON OTTER"},
-	}})
+	}}, 80)
 	if wide != maxGutter {
 		t.Fatalf("a long name took a %d column gutter, want the %d cap", wide, maxGutter)
 	}
 
 	// My own name sits in the same column as everyone else's.
-	mine := gutterFor(State{Me: "SWIFT CRIMSON OTTER", Members: only("A")})
+	mine := gutterFor(State{Me: "SWIFT CRIMSON OTTER", Members: only("A")}, 80)
 	if mine != maxGutter {
 		t.Fatalf("my own name did not widen the gutter: %d", mine)
 	}
@@ -148,5 +148,97 @@ func TestOneLostPathDoesNotCondemnTheRoom(t *testing.T) {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("the roster is missing %q:\n%s", want, frame)
 		}
+	}
+}
+
+// The gutter is a promise, not a suggestion: the body of every line starts in
+// the same column whoever is speaking. A three word nickname is thirty
+// characters, wider than the gutter, and padding with %-*s widens instead of
+// cutting — which shifts that speaker's text right and pushes its tail off the
+// edge, where Screen.Text quietly drops it.
+func TestLongNamesDoNotBreakTheColumn(t *testing.T) {
+	const long = "RESTLESS PERIWINKLE SALAMANDER"
+	const mark = "XMARKX"
+
+	state := State{
+		Phase: PhaseChat,
+		Me:    "OTTER",
+		Members: []Participant{
+			{Name: long, Link: LinkAlive},
+			{Name: "JADE HERON", Link: LinkAlive},
+		},
+		Messages: []Message{
+			{Speaker: "JADE HERON", Body: mark},
+			{Speaker: long, Body: mark},
+		},
+	}
+
+	for _, width := range []int{minWidth, 80, 120} {
+		screen := NewScreen(width, 30)
+		Draw(screen, state)
+
+		var columns []int
+		for _, line := range strings.Split(plain(screen), "\n") {
+			// In runes, not bytes: a truncated name ends in a three byte
+			// ellipsis, and measuring in bytes is the same mistake that made
+			// the first wordmark unreadable.
+			if at := strings.Index(line, mark); at >= 0 {
+				columns = append(columns, len([]rune(line[:at])))
+			}
+		}
+
+		if len(columns) != 2 {
+			t.Fatalf("at %d columns %d of 2 messages survived:\n%s", width, len(columns), plain(screen))
+		}
+		if columns[0] != columns[1] {
+			t.Fatalf("at %d columns the bodies start at %d and %d, so a long name broke the column",
+				width, columns[0], columns[1])
+		}
+
+		gutter := gutterFor(state, width)
+		if gutter > width/3 {
+			t.Fatalf("at %d columns the gutter took %d, more than a third", width, gutter)
+		}
+	}
+}
+
+// Nothing is lost off the right edge either: a long name must not eat into the
+// width the wrapping already committed to.
+func TestALongNameLosesNoText(t *testing.T) {
+	body := strings.TrimSpace(strings.Repeat("palabra ", 40))
+	state := State{
+		Phase:    PhaseChat,
+		Me:       "OTTER",
+		Members:  []Participant{{Name: "RESTLESS PERIWINKLE SALAMANDER", Link: LinkAlive}},
+		Messages: []Message{{Speaker: "RESTLESS PERIWINKLE SALAMANDER", Body: body}},
+	}
+
+	screen := NewScreen(80, 30)
+	Draw(screen, state)
+
+	if got := strings.Count(plain(screen), "palabra"); got != 40 {
+		t.Fatalf("%d of 40 words reached the screen:\n%s", got, plain(screen))
+	}
+}
+
+// A truncated name has to look truncated. Cutting "RESTLESS PERIWINKLE
+// SALAMANDER" down to a clean "RESTLESS PERIWINKLE" would read as a different
+// participant, and names are the one thing in a room that cannot be ambiguous.
+func TestATruncatedNameSaysSo(t *testing.T) {
+	got := fitName("RESTLESS PERIWINKLE SALAMANDER", 12)
+	if TextWidth(got) != 12 {
+		t.Fatalf("%q is %d wide, want 12", got, TextWidth(got))
+	}
+	if !strings.HasSuffix(strings.TrimRight(got, " "), "…") {
+		t.Fatalf("%q does not show that it was cut", got)
+	}
+	// A cut name still keeps clear of the text, or the two run together.
+	if !strings.HasSuffix(got, " ") {
+		t.Fatalf("%q leaves nothing between the name and the body", got)
+	}
+
+	// A name that fits is left exactly as it is, padded to the column.
+	if got := fitName("OTTER", 12); got != "OTTER       " {
+		t.Fatalf("a short name came back as %q", got)
 	}
 }
