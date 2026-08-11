@@ -30,14 +30,18 @@ const (
 	kindBye byte = 0x08
 
 	// kindData carries the caller's bytes and is the whole application surface
-	// of this package.
-	kindData byte = 0x40
+	// of this package. Exported as AppKind.
+	kindData = AppKind
 )
 
-// AppKind is where the transport's own numbering stops. A caller that needs
-// several kinds of its own puts its tag inside the payload rather than here,
-// which keeps the two numbering spaces from ever colliding.
-const AppKind = kindData
+// AppKind is the frame kind carrying a caller's bytes, and the only one this
+// package does not interpret. It is exported so the boundary is legible from
+// outside: everything below it belongs to the transport.
+//
+// A caller that needs several kinds of its own puts its tag inside the payload
+// rather than alongside this one, which keeps the two numbering spaces from
+// ever colliding.
+const AppKind byte = 0x40
 
 var errEmptyFrame = errors.New("punch: empty frame")
 

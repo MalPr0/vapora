@@ -172,6 +172,8 @@ that the path is direct and nobody else is on it.
 
 All of it from the Go standard library. No third-party code, anywhere.
 
+<sup><a href="ARCHITECTURE.md">ARCHITECTURE.md</a> has the step by step, with diagrams.</sup>
+
 ---
 
 ## Know your network before you blame it
@@ -298,6 +300,10 @@ session.Send([]byte{...})
 | `pkg/names` | A key turned into a name a person can say out loud. |
 | `pkg/chat` | Lines, typing and speakers — the layer this program's UI uses. |
 
+**→ [ARCHITECTURE.md](ARCHITECTURE.md) walks the whole thing**: how a path is
+opened step by step, what the wire looks like, how the mesh keys itself, and a
+recipe for building on it. Diagrams, not prose.
+
 [`examples/filedrop`](examples/filedrop) is the proof it is a real separation:
 it moves a file between two machines with no chat, no nicknames and no terminal,
 and nothing in the transport had to change to allow it.
@@ -320,8 +326,11 @@ Go 1.25. Nothing to fetch, nothing to configure.
 rooms. `pkg/stun` learns your address and classifies your NAT. `pkg/upnp` and
 `pkg/pcp` ask routers to open doors. `pkg/dht` is the BitTorrent client.
 `pkg/diag` is the reasoning behind the advice. `internal/tui` is the pixel-art
-chat. [`AGENTS.md`](AGENTS.md) documents the invariants — the things that look
-like details and turn out to be load-bearing.
+chat.
+
+[`ARCHITECTURE.md`](ARCHITECTURE.md) is the guided tour of all of it.
+[`AGENTS.md`](AGENTS.md) documents the invariants — the things that look like
+details and turn out to be load-bearing.
 
 ---
 

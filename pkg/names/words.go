@@ -38,11 +38,3 @@ var animals = []string{
 	"IGUANA", "JACKAL", "KRILL", "LEMUR", "MOOSE", "NUTHATCH", "OCELOT", "PLOVER",
 	"QUAIL", "RACCOON", "STOAT", "TERN", "UAKARI", "VICUNA", "WAPITI", "XERUS",
 }
-
-// Nicknames are the two names a session shows. Both peers derive the same pair
-// from the shared secret, so nothing has to be negotiated and neither side can
-// choose how it is labelled on the other's screen.
-type Nicknames struct {
-	Inviter string
-	Joiner  string
-}
