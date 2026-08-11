@@ -43,7 +43,7 @@ func main() {
 }
 
 func run(args []string) error {
-	command := "serve"
+	command := "help"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
 	}

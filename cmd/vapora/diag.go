@@ -71,14 +71,26 @@ func runDiag(args []string) error {
 	if *only != "filter" {
 		candidates, err := gatewayCandidates(ctx, *gateway, *upstream)
 		if err != nil {
-			return err
+			// No router here answers UPnP. That is a finding, not a reason to
+			// stop: the rest of the diagnosis is exactly what somebody on such
+			// a network needs, and refusing to run it leaves them with nothing.
+			fmt.Printf("gateways\n  none found: %v\n", err)
+		} else {
+			probeGateways(ctx, candidates)
 		}
-		probeGateways(ctx, candidates)
 	}
 	if *only == "pcp" {
 		return nil
 	}
 
 	fmt.Println()
-	return runFilterExperiment(ctx, *subjectPort, *externalPort)
+	if err := runFilterExperiment(ctx, *subjectPort, *externalPort); err != nil {
+		fmt.Printf("differential filter test unavailable: %v\n", err)
+		fmt.Println("it needs a router that speaks UPnP, to open one socket and compare.")
+	}
+
+	// The classification runs either way: it is what says whether punching can
+	// work at all, and it needs nothing from any router.
+	fmt.Println()
+	return runNAT(nil)
 }
