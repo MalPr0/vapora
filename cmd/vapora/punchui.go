@@ -21,7 +21,15 @@ func runPunchUI(ctx context.Context, open *channel) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", errNoTerminal, err)
 	}
-	defer terminal.Restore()
+
+	// The UI draws on the alternate screen, so quitting wipes every trace of
+	// what happened. A session that failed has to leave something behind in
+	// the scrollback, or the only way to find out why is to run it again in
+	// plain mode and hope it fails the same way.
+	defer func() {
+		terminal.Restore()
+		open.report()
+	}()
 
 	me := open.nicknames.For(open.role)
 	peer := open.nicknames.Other(open.role)
@@ -49,6 +57,7 @@ func runPunchUI(ctx context.Context, open *channel) error {
 
 	go func() {
 		if err := connect(uiCtx, open, chat); err != nil {
+			open.note(err.Error())
 			chat.Closed(err.Error())
 			return
 		}

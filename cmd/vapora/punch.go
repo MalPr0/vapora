@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +45,10 @@ type channel struct {
 	// established marks that the path is up, so an address arriving later has
 	// nothing left to offer a joiner: its only use was the fallback line.
 	established atomic.Bool
+
+	mu     sync.Mutex
+	shared string
+	failed string
 }
 
 func runPunch(args []string) error {
@@ -159,5 +164,46 @@ func (c *channel) waitForPath(ctx context.Context, invite func(*net.UDPAddr)) er
 }
 
 func (c *channel) inviteFor(endpoint *net.UDPAddr) string {
-	return punch.Invite{Endpoint: endpoint, Secret: c.secret}.Command(inviteCommand)
+	invite := punch.Invite{Endpoint: endpoint, Secret: c.secret}.Command(inviteCommand)
+
+	c.mu.Lock()
+	c.shared = invite
+	c.mu.Unlock()
+	return invite
+}
+
+// note records why a session ended, so the summary can say it after the screen
+// is handed back.
+func (c *channel) note(reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.failed = reason
+}
+
+// report writes what happened to the real screen. Anything the full screen UI
+// said is gone the moment it restores, and a session that did not work is
+// exactly the one somebody needs a record of.
+func (c *channel) report() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.established.Load() {
+		fmt.Printf("\nthe path with %s is closed.\n", c.session.Peer())
+		return
+	}
+
+	fmt.Println("\nno path was ever opened.")
+	if c.failed != "" {
+		fmt.Printf("  %s\n", c.failed)
+	}
+	if c.shared != "" {
+		fmt.Printf("  the invite this side was offering:\n    %s\n", c.shared)
+	}
+	if c.role == punch.RoleInviter {
+		fmt.Println("  this side was waiting. Somebody has to run that line, or paste theirs here.")
+	}
+	if probes := c.session.Probes(); probes.Count > 0 {
+		fmt.Printf("  %d packets arrived from %d address(es) and were not from a peer.\n",
+			probes.Count, probes.Sources)
+	}
 }
