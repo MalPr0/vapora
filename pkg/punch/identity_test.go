@@ -165,36 +165,86 @@ func TestNicknamesFromKeys(t *testing.T) {
 		t.Fatal("a key gave two different names")
 	}
 
-	name, suffix, found := strings.Cut(key.Nickname(), "-")
-	if !found || len(suffix) != nicknameSuffix {
+	words := strings.Fields(key.Nickname())
+	if len(words) != 3 {
 		t.Fatalf("got %q", key.Nickname())
 	}
-	pool := map[string]bool{}
-	for _, animal := range animals {
-		pool[animal] = true
+	inPool := func(pool []string, word string) bool {
+		for _, candidate := range pool {
+			if candidate == word {
+				return true
+			}
+		}
+		return false
 	}
-	if !pool[name] {
-		t.Fatalf("%q is not from the pool", name)
+	if !inPool(adjectives, words[0]) || !inPool(colours, words[1]) || !inPool(animals, words[2]) {
+		t.Fatalf("%q is not built from the pools", key.Nickname())
+	}
+	if key.Colour() != words[1] {
+		t.Fatalf("Colour said %q for %q", key.Colour(), key.Nickname())
+	}
+}
+
+// A name only has to be long enough to tell apart who is actually present, so
+// a small room gets bare animals and the extra words appear where they earn
+// their space.
+func TestShortNamesGrowOnlyWhenTheyHaveTo(t *testing.T) {
+	var keys []PublicKey
+	for i := 0; i < MaxMembers; i++ {
+		keys = append(keys, identity(t).Public())
 	}
 
-	// The number that matters is a room, not a crowd: sixty four animals times
-	// a thousand suffixes is sixty five thousand names, so any large enough
-	// sample collides by the birthday bound and says nothing. Eight people
-	// sharing a screen is the case the suffix exists for.
-	const rooms, size = 2000, MaxMembers
-	clashes := 0
-	for room := 0; room < rooms; room++ {
-		names := map[string]bool{}
-		for member := 0; member < size; member++ {
-			name := identity(t).Public().Nickname()
-			if names[name] {
-				clashes++
-				break
-			}
-			names[name] = true
+	names := ShortNames(keys)
+	if len(names) != len(keys) {
+		t.Fatalf("named %d of %d", len(names), len(keys))
+	}
+
+	seen := map[string]PublicKey{}
+	for key, name := range names {
+		if other, clash := seen[name]; clash && other != key {
+			t.Fatalf("%q named two members", name)
+		}
+		seen[name] = key
+		if words := len(strings.Fields(name)); words < 1 || words > 3 {
+			t.Fatalf("%q has %d words", name, words)
 		}
 	}
-	if clashes*100 > rooms {
-		t.Fatalf("%d of %d rooms of %d had two members sharing a name", clashes, rooms, size)
+}
+
+// Two keys that share an animal have to be told apart, and the one word that
+// does it is the one that gets added.
+func TestShortNamesDisambiguateACollision(t *testing.T) {
+	var first, second PublicKey
+	for attempt := 0; attempt < 20000; attempt++ {
+		candidate := identity(t).Public()
+		if first.isZero() {
+			first = candidate
+			continue
+		}
+		if candidate.name(1) == first.name(1) && candidate != first {
+			second = candidate
+			break
+		}
+	}
+	if second.isZero() {
+		t.Skip("no animal collision came up in twenty thousand keys")
+	}
+
+	names := ShortNames([]PublicKey{first, second})
+	if names[first] == names[second] {
+		t.Fatalf("both were named %q", names[first])
+	}
+	for _, key := range []PublicKey{first, second} {
+		if len(strings.Fields(names[key])) < 2 {
+			t.Fatalf("a collision was left as the bare animal %q", names[key])
+		}
+	}
+}
+
+// A lone member does not need qualifying.
+func TestShortNamesStayShortAlone(t *testing.T) {
+	key := identity(t).Public()
+	if got := ShortNames([]PublicKey{key})[key]; strings.Contains(got, " ") {
+		t.Fatalf("a room of one got %q", got)
 	}
 }

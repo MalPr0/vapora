@@ -188,7 +188,11 @@ func drawMessages(screen *Screen, state State, width, height int) {
 	offset := area - len(visible)
 	for i, line := range visible {
 		y := top + offset + i
-		x := 2
+		x := 0
+		if line.mention {
+			screen.Text(0, y, MentionMark, Gold, Navy)
+		}
+		x = 2
 		if line.speaker != "" {
 			tag := fmt.Sprintf("%-10s", line.speaker)
 			x += screen.Text(x, y, tag, line.color, Navy)
@@ -247,6 +251,9 @@ type renderedLine struct {
 	body      string
 	color     int
 	bodyColor int
+	// mention marks a line addressed to this participant, which is the one
+	// thing worth pulling out of a conversation that scrolls past.
+	mention bool
 }
 
 func wrapMessages(state State, width int) []renderedLine {
@@ -263,8 +270,13 @@ func wrapMessages(state State, width int) []renderedLine {
 			color, bodyColor = Gray, Gray
 		}
 
+		addressed := !message.Mine && !message.System && mentions(message.Body, []string{state.Me})
+		if addressed {
+			bodyColor = Gold
+		}
+
 		for i, chunk := range wrap(text.Safe(message.Body), body) {
-			line := renderedLine{body: chunk, color: color, bodyColor: bodyColor}
+			line := renderedLine{body: chunk, color: color, bodyColor: bodyColor, mention: addressed}
 			if i == 0 {
 				line.speaker = message.Speaker
 			}
