@@ -62,9 +62,14 @@ a signature is a change to the contract.
   part is the gap: between `Open` returning and `Run` starting, nothing
   dispatches, so waiting on something the socket must deliver starves it. Never
   block between the two.
-- **The codec decides who the peer is, including where it is.** Following a
-  peer to a new address is allowed only for a frame that authenticates, and
-  only once the path has gone quiet.
+- **Holding the secret does not make you the peer.** Everyone handed the same
+  invite seals under the same key, so authentication alone cannot tell the peer
+  from a third party. `Opened.Sender` is the nonce prefix, drawn per codec, so
+  it names the process: a move is only followed when it matches the sender
+  already established. You cannot be replaced once you have spoken.
+- **An authenticated frame from a stranger is louder than a scanner.** Junk
+  never authenticates, so `Probes.Impostors` means the invite is in more hands
+  than one. Report the two differently.
 - **Anything reachable from the internet authenticates.** There is no
   unauthenticated mode and `plainCodec` is unexported for that reason; it
   exists so tests can exercise framing on its own.

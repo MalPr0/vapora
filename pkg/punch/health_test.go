@@ -204,3 +204,70 @@ func TestPaddingIsNotReused(t *testing.T) {
 	}
 	t.Fatal("the same sequence produced an identical frame every time")
 }
+
+// Padding only helps if every control frame actually gets it. This walks a real
+// handshake and measures what goes on the wire, because a frame that forgot to
+// pad still leaves a fixed size on a fixed cadence for anyone counting bytes.
+func TestEveryControlFrameOnTheWireVaries(t *testing.T) {
+	sizes := map[byte]map[int]bool{}
+
+	for attempt := 0; attempt < 12; attempt++ {
+		home, peer := listen(t), listen(t)
+
+		secret, err := NewSecret()
+		if err != nil {
+			t.Fatalf("cannot generate a secret: %v", err)
+		}
+		homeCodec, err := NewSecretCodec(secret, RoleInviter)
+		if err != nil {
+			t.Fatalf("cannot build the codec: %v", err)
+		}
+		peerCodec, err := NewSecretCodec(secret, RoleJoiner)
+		if err != nil {
+			t.Fatalf("cannot build the codec: %v", err)
+		}
+
+		session := NewSession(home, homeCodec, &syncBuffer{})
+		session.SetPeer(localAddr(t, peer))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go session.Open(ctx, 2*time.Second)
+
+		// Prompt an ack out of the handshake, then a pong out of the session.
+		_, _ = peer.WriteToUDP(peerCodec.Seal(kindPunch, pad()), localAddr(t, home))
+		time.Sleep(60 * time.Millisecond)
+		go session.Run(ctx)
+		_, _ = peer.WriteToUDP(peerCodec.Seal(kindPing, sequencePayload(1)), localAddr(t, home))
+
+		_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+		buffer := make([]byte, 2048)
+		for reads := 0; reads < 6; reads++ {
+			n, _, err := peer.ReadFromUDP(buffer)
+			if err != nil {
+				break
+			}
+			frame, err := peerCodec.Open(buffer[:n])
+			if err != nil {
+				continue
+			}
+			if sizes[frame.Kind] == nil {
+				sizes[frame.Kind] = map[int]bool{}
+			}
+			sizes[frame.Kind][n] = true
+		}
+
+		cancel()
+		home.Close()
+		peer.Close()
+	}
+
+	for _, kind := range []byte{kindPunch, kindAck, kindPing, kindPong} {
+		seen := sizes[kind]
+		if len(seen) == 0 {
+			t.Fatalf("kind 0x%02x never reached the wire, the test did not exercise it", kind)
+		}
+		if len(seen) == 1 {
+			t.Fatalf("kind 0x%02x always had the same size on the wire: it is not padded", kind)
+		}
+	}
+}

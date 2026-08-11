@@ -44,7 +44,20 @@ var (
 // of a concrete cipher so an unauthenticated session stays a drop in.
 type Codec interface {
 	Seal(kind byte, payload string) []byte
-	Open(wire []byte) (byte, string, error)
+	Open(wire []byte) (Opened, error)
+}
+
+// Sender identifies the codec instance that sealed a frame. Two processes
+// holding the same secret still seal under different senders, because the nonce
+// prefix is drawn per codec: it is what tells a peer that moved apart from
+// somebody else who simply has the invite.
+type Sender [prefixBytes]byte
+
+// Opened is an authenticated frame.
+type Opened struct {
+	Kind    byte
+	Payload string
+	Sender  Sender
 }
 
 // SecretCodec encrypts and authenticates every frame with AES-256-GCM, keyed by
@@ -112,25 +125,29 @@ func (c *SecretCodec) Seal(kind byte, payload string) []byte {
 	return c.sealAEAD.Seal(wire, nonce, encode(kind, payload), nil)
 }
 
-func (c *SecretCodec) Open(wire []byte) (byte, string, error) {
+func (c *SecretCodec) Open(wire []byte) (Opened, error) {
 	if len(wire) < nonceBytes+c.openAEAD.Overhead() {
-		return 0, "", ErrUnauthenticated
+		return Opened{}, ErrUnauthenticated
 	}
 
 	nonce := wire[:nonceBytes]
 	plain, err := c.openAEAD.Open(nil, nonce, wire[nonceBytes:], nil)
 	if err != nil {
-		return 0, "", ErrUnauthenticated
+		return Opened{}, ErrUnauthenticated
 	}
 
 	var prefix [prefixBytes]byte
 	copy(prefix[:], nonce[:prefixBytes])
 	counter := binary.BigEndian.Uint64(nonce[prefixBytes:])
 	if !c.accept(prefix, counter) {
-		return 0, "", ErrReplayed
+		return Opened{}, ErrReplayed
 	}
 
-	return decode(plain)
+	kind, payload, err := decode(plain)
+	if err != nil {
+		return Opened{}, err
+	}
+	return Opened{Kind: kind, Payload: payload, Sender: Sender(prefix)}, nil
 }
 
 func (c *SecretCodec) nonceFor(prefix [prefixBytes]byte, counter uint64) []byte {
@@ -161,6 +178,12 @@ func (plainCodec) Seal(kind byte, payload string) []byte {
 	return encode(kind, payload)
 }
 
-func (plainCodec) Open(wire []byte) (byte, string, error) {
-	return decode(wire)
+// Open reports a zero sender: without authentication there is nothing to
+// attribute a frame to.
+func (plainCodec) Open(wire []byte) (Opened, error) {
+	kind, payload, err := decode(wire)
+	if err != nil {
+		return Opened{}, err
+	}
+	return Opened{Kind: kind, Payload: payload}, nil
 }

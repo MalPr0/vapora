@@ -40,6 +40,8 @@ type Session struct {
 	pingSentAt   time.Time
 	recoverDelay time.Duration
 	moves        int
+	peerSender   Sender
+	knownSender  bool
 	departed     bool
 	probes       probeCount
 	sniff        func(payload []byte, from *net.UDPAddr) bool
@@ -116,11 +118,19 @@ func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 		}
 
 		// A frame that does not authenticate is someone else's packet: the
-		// secret is what keeps a stranger from becoming the peer.
-		kind, _, err := s.codec.Open(buffer[:n])
-		if err != nil || (kind != kindPunch && kind != kindAck) {
+		// secret is what keeps a stranger from becoming the peer. Nothing is
+		// sent back, so a scanner learns nothing from probing here, but the
+		// attempt is counted: waiting is exactly when an address that only
+		// ever appeared on one invite would be found by somebody sweeping.
+		frame, err := s.codec.Open(buffer[:n])
+		if err != nil {
+			s.countProbe(from)
 			continue
 		}
+		if frame.Kind != kindPunch && frame.Kind != kindAck {
+			continue
+		}
+		kind := frame.Kind
 
 		peer := s.Peer()
 		if peer != nil && !sameEndpoint(peer, from) {
@@ -133,9 +143,13 @@ func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 			s.SetPeer(from)
 		}
 
+		// The handshake is where the peer stops being an address and becomes a
+		// codec instance, which is what a later move gets checked against.
+		s.rememberSender(frame.Sender)
+
 		// A punch proves the peer reaches us; the ack closes the other way.
 		if kind == kindPunch {
-			s.send(kindAck, "")
+			s.send(kindAck, pad())
 		}
 		s.flushPending()
 		return nil
@@ -190,14 +204,15 @@ func (s *Session) Run(ctx context.Context) error {
 			continue
 		}
 
-		kind, payload, err := s.codec.Open(buffer[:n])
+		frame, err := s.codec.Open(buffer[:n])
 		if err != nil {
 			s.countProbe(from)
 			continue
 		}
-		if !s.accept(from) {
+		if !s.accept(from, frame.Sender) {
 			continue
 		}
+		kind, payload := frame.Kind, frame.Payload
 		// Every frame that authenticates is proof of life, whatever it carries.
 		s.heard()
 
@@ -297,27 +312,68 @@ func (s *Session) sniffed(payload []byte, from *net.UDPAddr) bool {
 }
 
 // accept decides whether an authenticated frame from this address belongs to
-// the session. A frame from somewhere new is the peer having moved: only the
-// holder of the secret can produce one, so following it is as safe as trusting
-// the secret in the first place. It is only followed once the path has gone
-// quiet, which keeps a healthy conversation from flapping between addresses.
-func (s *Session) accept(from *net.UDPAddr) bool {
+// the session.
+//
+// Holding the secret is not enough to be the peer. Everyone handed the same
+// invite seals under the same key, so a third party's frames authenticate just
+// as well, and following one would hand the session to whoever showed up last
+// while evicting the peer in silence. The sender is what tells them apart: it
+// is drawn per codec, so it names the process rather than the invite.
+//
+// A move is therefore only followed when the sender matches the one already
+// established, and only once the path has gone quiet, which keeps a healthy
+// conversation from flapping between addresses. Before anyone has spoken there
+// is nobody to displace and first authenticated frame wins, exactly as during
+// the handshake; the rule is that you cannot be replaced once you have spoken.
+// A peer that restarted has a new sender and is deliberately not followed: a
+// restarted process is a new session, and treating it as a move is the same
+// mistake seen from the inside.
+func (s *Session) accept(from *net.UDPAddr, sender Sender) bool {
 	peer := s.Peer()
 	if peer == nil {
 		return false
 	}
 	if sameEndpoint(peer, from) {
+		s.rememberSender(sender)
 		return true
 	}
+
+	// An authenticated frame from an address that is not the peer's is the
+	// strongest evidence there is that the invite is in more hands than one:
+	// junk from a scanner never gets this far. Whether or not it is followed,
+	// it is worth counting.
+	defer s.countImpostor(from)
+
 	if s.Health().Link == LinkAlive {
 		return false
 	}
 
 	s.mu.Lock()
+	established := s.knownSender
+	mismatch := established && s.peerSender != sender
+	if mismatch {
+		s.mu.Unlock()
+		return false
+	}
 	s.peer = from
 	s.moves++
+	if !established {
+		s.peerSender = sender
+		s.knownSender = true
+	}
 	s.mu.Unlock()
 	return true
+}
+
+// rememberSender pins the peer to the codec instance that first authenticated,
+// so a later move can be checked against it.
+func (s *Session) rememberSender(sender Sender) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.knownSender {
+		s.peerSender = sender
+		s.knownSender = true
+	}
 }
 
 // Moves counts how many times the peer has been followed to a new address.

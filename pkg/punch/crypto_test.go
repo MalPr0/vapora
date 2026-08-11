@@ -30,14 +30,14 @@ func TestSecretCodecRoundTripsBothDirections(t *testing.T) {
 	inviter, joiner, _ := codecPair(t)
 
 	wire := inviter.Seal(kindMessage, "hola")
-	kind, payload, err := joiner.Open(wire)
-	if err != nil || kind != kindMessage || payload != "hola" {
-		t.Fatalf("got kind %d payload %q err %v", kind, payload, err)
+	frame, err := joiner.Open(wire)
+	if err != nil || frame.Kind != kindMessage || frame.Payload != "hola" {
+		t.Fatalf("got %+v err %v", frame, err)
 	}
 
 	back := joiner.Seal(kindAck, "")
-	if kind, _, err := inviter.Open(back); err != nil || kind != kindAck {
-		t.Fatalf("got kind %d err %v", kind, err)
+	if frame, err := inviter.Open(back); err != nil || frame.Kind != kindAck {
+		t.Fatalf("got %+v err %v", frame, err)
 	}
 }
 
@@ -55,7 +55,7 @@ func TestSecretCodecRejectsAnotherSecret(t *testing.T) {
 	_, stranger, _ := codecPair(t)
 
 	wire := stranger.Seal(kindPunch, "")
-	if _, _, err := inviter.Open(wire); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := inviter.Open(wire); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -66,7 +66,7 @@ func TestSecretCodecKeysAreDirectional(t *testing.T) {
 	inviter, _, _ := codecPair(t)
 
 	wire := inviter.Seal(kindMessage, "eco")
-	if _, _, err := inviter.Open(wire); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := inviter.Open(wire); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -77,7 +77,7 @@ func TestSecretCodecRejectsTampering(t *testing.T) {
 	wire := inviter.Seal(kindMessage, "hola")
 	wire[len(wire)-1] ^= 0xFF
 
-	if _, _, err := joiner.Open(wire); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := joiner.Open(wire); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -86,10 +86,10 @@ func TestSecretCodecRejectsReplay(t *testing.T) {
 	inviter, joiner, _ := codecPair(t)
 
 	wire := inviter.Seal(kindMessage, "una sola vez")
-	if _, _, err := joiner.Open(wire); err != nil {
+	if _, err := joiner.Open(wire); err != nil {
 		t.Fatalf("the first delivery must pass: %v", err)
 	}
-	if _, _, err := joiner.Open(wire); !errors.Is(err, ErrReplayed) {
+	if _, err := joiner.Open(wire); !errors.Is(err, ErrReplayed) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestSecretCodecToleratesReordering(t *testing.T) {
 	}
 
 	for _, index := range []int{4, 0, 3, 1, 2} {
-		if _, _, err := joiner.Open(frames[index]); err != nil {
+		if _, err := joiner.Open(frames[index]); err != nil {
 			t.Fatalf("frame %d rejected out of order: %v", index, err)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 )
 
 const nicknameInfo = "vapora nickname v1"
@@ -52,14 +53,15 @@ func (s Secret) Nicknames() Nicknames {
 	return Nicknames{Inviter: first, Joiner: second}
 }
 
+// pick derives one name. The slot goes in the info string rather than indexing
+// into a fixed buffer, which is what stops a third name from reading past the
+// end of it.
 func (s Secret) pick(slot int) string {
-	key, err := hkdf.Key(sha256.New, s, nil, nicknameInfo, 8)
+	key, err := hkdf.Key(sha256.New, s, nil, fmt.Sprintf("%s %d", nicknameInfo, slot), 4)
 	if err != nil {
 		return animals[slot%len(animals)]
 	}
-
-	value := binary.BigEndian.Uint32(key[slot*4 : slot*4+4])
-	return animals[int(value)%len(animals)]
+	return animals[int(binary.BigEndian.Uint32(key))%len(animals)]
 }
 
 func indexOf(name string) int {

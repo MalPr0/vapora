@@ -76,6 +76,13 @@ func nextProbeWarning(warned int) int {
 
 func recoveryMessage(recovery Recovery) string {
 	if recovery.Probed {
+		if recovery.Probes.Impostors > 0 {
+			return fmt.Sprintf(
+				"%d packets from %d address(es) carried your session key but did not come from your friend. "+
+					"Somebody else is holding this invite and using it. They were ignored and cannot take "+
+					"over the conversation, but the invite is no longer private: quit and start a new session",
+				recovery.Probes.Impostors, recovery.Probes.Sources)
+		}
 		return fmt.Sprintf(
 			"%d packets from %d address(es) reached this port and could not authenticate. "+
 				"Nothing was answered, so they learned nothing, but somebody knows this address: "+

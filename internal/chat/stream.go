@@ -70,14 +70,14 @@ func (s *stream) ReadLine() (string, error) {
 		return "", err
 	}
 
-	kind, payload, err := s.codec.Open(sealed)
+	frame, err := s.codec.Open(sealed)
 	if err != nil {
 		return "", fmt.Errorf("chat: frame does not authenticate: %w", err)
 	}
-	if kind != frameMessage {
-		return "", fmt.Errorf("chat: unexpected frame kind 0x%02x", kind)
+	if frame.Kind != frameMessage {
+		return "", fmt.Errorf("chat: unexpected frame kind 0x%02x", frame.Kind)
 	}
-	return payload, nil
+	return frame.Payload, nil
 }
 
 func (s *stream) Close() error { return s.conn.Close() }

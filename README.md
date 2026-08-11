@@ -182,7 +182,15 @@ an IPsec style sliding window. The secret is 128 random bits from `crypto/rand`;
 being full entropy already, it needs a KDF, not password stretching.
 
 **The invite is a credential.** It belongs on a channel you trust, and both
-sides must carry the same one or they never see each other. There is no
+sides must carry the same one or they never see each other.
+
+Handing it to a third person does not add them to the conversation. Everyone
+with the invite seals under the same key, so their frames authenticate as well
+as your friend's, and the session tells them apart by the nonce prefix, which is
+drawn per process. A move is only followed when it comes from the side already
+established: you cannot be replaced once you have spoken. The attempt is
+reported, because a frame that authenticates from somewhere that is not your
+friend means the invite is no longer private. There is no
 unauthenticated mode: a socket reachable from the internet has no business
 running without the AEAD, and the secret costs nothing.
 

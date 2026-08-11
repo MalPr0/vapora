@@ -23,16 +23,30 @@ type Probes struct {
 	Last *net.UDPAddr
 	// Since is when the first arrived.
 	Since time.Time
+	// Impostors is how many of them authenticated. Junk from a scanner never
+	// does, so this is not noise: it is somebody else holding the invite and
+	// trying to use it, which is a different problem from being scanned and
+	// deserves to be said differently.
+	Impostors int
 }
 
 type probeCount struct {
-	count   int
-	sources map[string]bool
-	last    *net.UDPAddr
-	since   time.Time
+	count     int
+	impostors int
+	sources   map[string]bool
+	last      *net.UDPAddr
+	since     time.Time
 }
 
-func (s *Session) countProbe(from *net.UDPAddr) {
+// countProbe records a datagram that could not authenticate: a scanner, or
+// anything else that found the port without the key.
+func (s *Session) countProbe(from *net.UDPAddr) { s.record(from, false) }
+
+// countImpostor records a datagram that authenticated but did not come from the
+// peer. Only a holder of the invite can produce one.
+func (s *Session) countImpostor(from *net.UDPAddr) { s.record(from, true) }
+
+func (s *Session) record(from *net.UDPAddr, authenticated bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -41,6 +55,9 @@ func (s *Session) countProbe(from *net.UDPAddr) {
 		s.probes.since = time.Now()
 	}
 	s.probes.count++
+	if authenticated {
+		s.probes.impostors++
+	}
 	s.probes.last = from
 	if len(s.probes.sources) < probeSources {
 		s.probes.sources[from.String()] = true
@@ -54,10 +71,11 @@ func (s *Session) Probes() Probes {
 	defer s.mu.RUnlock()
 
 	return Probes{
-		Count:   s.probes.count,
-		Sources: len(s.probes.sources),
-		Last:    s.probes.last,
-		Since:   s.probes.since,
+		Count:     s.probes.count,
+		Sources:   len(s.probes.sources),
+		Last:      s.probes.last,
+		Since:     s.probes.since,
+		Impostors: s.probes.impostors,
 	}
 }
 

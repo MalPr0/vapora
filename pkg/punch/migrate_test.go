@@ -221,3 +221,130 @@ func TestSniffAlsoWorksWhileWaiting(t *testing.T) {
 		t.Fatal("a shared socket saw nothing while the session was waiting")
 	}
 }
+
+// Holding the secret does not make you the peer. Everyone handed the same
+// invite seals under the same key, so a third party's frames authenticate just
+// as well as the peer's: without the sender check, following one hands the
+// session to whoever showed up last and evicts the peer in silence.
+func TestAThirdHolderOfTheSecretCannotStealTheSession(t *testing.T) {
+	home, peer, third := listen(t), listen(t), listen(t)
+	defer home.Close()
+	defer peer.Close()
+	defer third.Close()
+
+	secret, err := NewSecret()
+	if err != nil {
+		t.Fatalf("cannot generate a secret: %v", err)
+	}
+	homeCodec, err := NewSecretCodec(secret, RoleInviter)
+	if err != nil {
+		t.Fatalf("cannot build the codec: %v", err)
+	}
+	// A separate codec is exactly what a third process holding the same invite
+	// has: same keys, its own sender.
+	thirdCodec, err := NewSecretCodec(secret, RoleJoiner)
+	if err != nil {
+		t.Fatalf("cannot build the codec: %v", err)
+	}
+	peerCodec, err := NewSecretCodec(secret, RoleJoiner)
+	if err != nil {
+		t.Fatalf("cannot build the codec: %v", err)
+	}
+
+	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	session := NewSession(home, homeCodec, &syncBuffer{})
+	session.Observe(observer)
+	session.SetPeer(localAddr(t, peer))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go session.Run(ctx)
+
+	// The peer speaks first, which is what pins it to the session.
+	_, _ = peer.WriteToUDP(peerCodec.Seal(kindMessage, "soy el par"), localAddr(t, home))
+	select {
+	case got := <-observer.messages:
+		if got != "soy el par" {
+			t.Fatalf("got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the peer never got through")
+	}
+
+	staleOut(t, session)
+
+	for i := 0; i < 10; i++ {
+		_, _ = third.WriteToUDP(thirdCodec.Seal(kindMessage, "soy yo ahora"), localAddr(t, home))
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	select {
+	case got := <-observer.messages:
+		t.Fatalf("a third holder of the invite was heard: %q", got)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if session.Moves() != 0 {
+		t.Fatalf("the session followed a third holder, %d moves", session.Moves())
+	}
+	if got := session.Peer(); got.Port != localAddr(t, peer).Port {
+		t.Fatalf("the session is talking to %v instead of its peer", got)
+	}
+	// Being told is the point: silence would leave the user unaware that the
+	// invite is in more hands than they thought.
+	// It has to be reported as what it is: a holder of the invite, not a
+	// scanner. The two call for different answers.
+	probes := session.Probes()
+	if probes.Impostors == 0 {
+		t.Fatalf("a third holder of the invite was not reported as one: %+v", probes)
+	}
+}
+
+// The peer itself still has to be followable when it moves.
+func TestTheRealPeerIsStillFollowed(t *testing.T) {
+	home, oldAddr, newAddr := listen(t), listen(t), listen(t)
+	defer home.Close()
+	defer oldAddr.Close()
+	defer newAddr.Close()
+
+	secret, err := NewSecret()
+	if err != nil {
+		t.Fatalf("cannot generate a secret: %v", err)
+	}
+	homeCodec, err := NewSecretCodec(secret, RoleInviter)
+	if err != nil {
+		t.Fatalf("cannot build the codec: %v", err)
+	}
+	peerCodec, err := NewSecretCodec(secret, RoleJoiner)
+	if err != nil {
+		t.Fatalf("cannot build the codec: %v", err)
+	}
+
+	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	session := NewSession(home, homeCodec, &syncBuffer{})
+	session.Observe(observer)
+	session.SetPeer(localAddr(t, oldAddr))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go session.Run(ctx)
+
+	_, _ = oldAddr.WriteToUDP(peerCodec.Seal(kindMessage, "hola"), localAddr(t, home))
+	<-observer.messages
+
+	staleOut(t, session)
+
+	// Same codec, new address: the peer moved.
+	_, _ = newAddr.WriteToUDP(peerCodec.Seal(kindMessage, "me mude"), localAddr(t, home))
+	select {
+	case got := <-observer.messages:
+		if got != "me mude" {
+			t.Fatalf("got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the peer was not followed to its new address")
+	}
+	if session.Moves() != 1 {
+		t.Fatalf("got %d moves", session.Moves())
+	}
+}
