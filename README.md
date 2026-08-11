@@ -240,6 +240,25 @@ when your address changes mid-conversation.
 **Read section 7 before using it.** It puts your address on a public network,
 which is the one thing the rest of this tool goes out of its way not to do.
 
+### A room does not outlive its conversation
+
+Once a room has had somebody in it and then empties out, it closes. A room left
+running is a port on a machine with nobody behind it, and on a server that is
+never turned off, "nobody behind it" means forever.
+
+Somebody whose connection merely drops still counts as present — a bad thirty
+seconds is not a departure, and the room waits for them. It closes when the last
+person is actually gone.
+
+If you do want one sitting there waiting, say so:
+
+```bash
+./vapora room -standalone
+```
+
+That also removes the time limit on waiting for the first person, which exists
+for the same reason.
+
 ### Room commands
 
 - **`!who`** lists who is present and whether each connection is healthy.
@@ -247,6 +266,7 @@ which is the one thing the rest of this tool goes out of its way not to do.
 - **`!exit`** leaves and tells everyone.
 - **`-plain`** turns off the full-screen interface here too, for the same
   reason: when something goes wrong you want the output to stay on screen.
+- **`-standalone`** keeps the room open with nobody else in it.
 - **Pasting an address** while you are waiting alone starts punching towards
   it. That is the fix above; it is not a command and it needs no `!`.
 

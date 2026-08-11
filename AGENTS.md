@@ -133,6 +133,12 @@ a signature is a change to the contract.
 - **An announcement nobody accepted is not an announcement.** Nodes answering is
   not the same as nodes taking the announcement, and reporting the first as
   success is how a rendezvous appears to work and never meets anyone.
+- **A room closes when it empties, unless told otherwise.** A room that has been
+  populated and then empties is a port with nobody behind it, which on a server
+  means forever. Presence is counted excluding those who said goodbye, and
+  *including* those whose path is merely down: a network hiccup is not a
+  departure, and a room that closed itself over one would be worse than the
+  problem. `-standalone` opts out and also lifts the wait limit.
 - **One address cannot describe everybody.** Two people behind the same router
   cannot use each other's public address: that needs the router to send a packet
   out and route it straight back in, which most home routers refuse for UDP. So

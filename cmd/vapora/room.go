@@ -31,13 +31,16 @@ type room struct {
 	timeout   time.Duration
 	endpoint  *net.UDPAddr
 
-	meeting *punch.Rendezvous
+	meeting    *punch.Rendezvous
+	standalone bool
 
-	mu     sync.Mutex
-	tried  map[string]bool
-	shared string
-	failed string
-	joined bool
+	mu        sync.Mutex
+	populated bool
+	emptied   bool
+	tried     map[string]bool
+	shared    string
+	failed    string
+	joined    bool
 }
 
 func runRoom(args []string) error {
@@ -47,6 +50,8 @@ func runRoom(args []string) error {
 	keepalive := flags.Duration("keepalive", stun.DefaultKeepalive, "how often to refresh the NAT binding")
 	advertise := flags.String("advertise", "", "put this address on invites instead of the one STUN reports")
 	plain := flags.Bool("plain", false, "skip the full screen UI and use plain lines")
+	standalone := flags.Bool("standalone", false,
+		"stay open with nobody else here. Off by default so a room cannot outlive its conversation")
 	discover := flags.Bool("discover", false,
 		"also find each other through the BitTorrent DHT. Publishes your address on a public network")
 	if err := flags.Parse(args); err != nil {
@@ -88,7 +93,7 @@ func runRoom(args []string) error {
 	}
 
 	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining,
-		timeout: *timeout, advertise: *advertise}
+		timeout: *timeout, advertise: *advertise, standalone: *standalone}
 
 	if *discover {
 		meeting, err := punch.NewRendezvous(mux, secret, conn.LocalAddr().(*net.UDPAddr).Port)
@@ -150,7 +155,7 @@ func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
 		})
 	}
 
-	go r.watchMembers(ctx)
+	go r.watchMembers(ctx, quit)
 	return r.readInput(ctx, quit)
 }
 
@@ -287,6 +292,49 @@ func (r *room) offerWayBack(ctx context.Context, chat *tui.Chat) {
 	chat.SetInvite("if it stalls, send this back for them to paste: " + endpoint.String())
 }
 
+// stillHere counts who is actually present.
+//
+// Somebody who said goodbye stays on the list for a moment, and somebody whose
+// path is merely down stays on it for minutes — deliberately, because a network
+// hiccup is not a departure. Only the first of those is gone for the purpose of
+// closing the room; the second still counts, so a room does not close itself
+// over a bad thirty seconds.
+func stillHere(members []punch.Member) int {
+	count := 0
+	for _, member := range members {
+		if !member.Health.Departed {
+			count++
+		}
+	}
+	return count
+}
+
+// quorum reports whether the room should stay open, and is the reason a room
+// does not outlive the conversation in it.
+//
+// A room needs somebody to talk to. Once one has been open and then empties, it
+// is a port on a server with nobody behind it — which on a machine that is
+// never turned off means forever. So it closes, and -standalone is how somebody
+// who really does want to sit and wait says so out loud.
+//
+// Emptying is judged by this side alone. If everyone else is still talking and
+// this machine lost them, this machine is the one that should close.
+func (r *room) quorum(present int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if present > 0 {
+		r.populated = true
+		return true
+	}
+	if r.standalone || !r.populated {
+		return true
+	}
+
+	r.emptied = true
+	return false
+}
+
 // meet runs the DHT side of finding each other: it publishes this address under
 // the secret and punches towards whatever else is published there.
 //
@@ -343,7 +391,13 @@ func (r *room) waitForCompany(ctx context.Context) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
+	// Waiting forever is the same problem from the other end, so only a room
+	// that was told it may be alone waits without a limit.
 	deadline := time.After(r.timeout)
+	if r.standalone {
+		deadline = nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -404,6 +458,11 @@ func (r *room) report() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if r.emptied {
+		fmt.Println("\nthe room closed because everybody else left.")
+		fmt.Println("  run with -standalone if you want it to stay open on its own.")
+		return
+	}
 	if r.joined {
 		fmt.Println("\nthe room is closed.")
 		return
@@ -427,7 +486,7 @@ func (r *room) Typing(punch.Member, bool) {}
 
 // watchMembers reports arrivals and departures by diffing the roster, which is
 // polled like everything else about a path.
-func (r *room) watchMembers(ctx context.Context) {
+func (r *room) watchMembers(ctx context.Context, quit context.CancelFunc) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -437,8 +496,9 @@ func (r *room) watchMembers(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			members := r.room.Members()
 			present := map[punch.PublicKey]string{}
-			for _, member := range r.room.Members() {
+			for _, member := range members {
 				present[member.Key] = member.Name
 				if _, seen := known[member.Key]; !seen {
 					fmt.Printf("-- %s joined\n", member.Name)
@@ -450,6 +510,12 @@ func (r *room) watchMembers(ctx context.Context) {
 				}
 			}
 			known = present
+
+			if !r.quorum(stillHere(members)) {
+				fmt.Println("-- everybody left, so the room is closing. Use -standalone to stay open.")
+				quit()
+				return
+			}
 		}
 	}
 }

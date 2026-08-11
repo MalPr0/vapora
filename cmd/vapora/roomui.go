@@ -89,8 +89,13 @@ func (r *room) pushRoster(ctx context.Context, chat *tui.Chat) {
 				}
 			}
 			known = present
-
 			chat.SetMembers(participants)
+
+			if !r.quorum(stillHere(members)) {
+				chat.System("everybody left, so the room is closing")
+				chat.Quit()
+				return
+			}
 		}
 	}
 }
