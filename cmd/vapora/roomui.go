@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
@@ -104,6 +105,8 @@ func (r *room) command(line string, chat *tui.Chat) bool {
 	case trimmed(line) == "!who":
 		chat.System(r.describeMembers())
 		return true
+	case r.pasteWhileWaiting(line, chat):
+		return true
 	case trimmed(line) == "!invite":
 		r.mu.Lock()
 		invite := r.shared
@@ -117,6 +120,22 @@ func (r *room) command(line string, chat *tui.Chat) bool {
 		return true
 	}
 	return false
+}
+
+// pasteWhileWaiting takes an address the other side sent back. It only applies
+// before anybody is here: once the room has members, a line that looks like an
+// address is far more likely to be somebody talking about one.
+func (r *room) pasteWhileWaiting(line string, chat *tui.Chat) bool {
+	if strings.HasPrefix(strings.TrimSpace(line), "!") || len(r.room.Members()) > 0 {
+		return false
+	}
+
+	where, ok := r.reach(context.Background(), line)
+	if !ok {
+		return false
+	}
+	chat.System("punching towards " + where + ", they have to be running too")
+	return true
 }
 
 func (r *room) describeMembers() string {

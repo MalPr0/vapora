@@ -30,7 +30,7 @@ func (r *Room) Join(ctx context.Context, invite RoomInvite, timeout time.Duratio
 	joinCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	go r.helloLoop(joinCtx, invite)
+	go r.helloLoop(joinCtx, invite.Endpoint)
 
 	// The path opening is what says the greeter answered under the pair key.
 	// ensureMember already started the punching; waiting again here would run a
@@ -42,14 +42,30 @@ func (r *Room) Join(ctx context.Context, invite RoomInvite, timeout time.Duratio
 	return nil
 }
 
-func (r *Room) helloLoop(ctx context.Context, invite RoomInvite) {
+// Reach punches towards an address without joining anything. A room only ever
+// answers a hello, so between two networks that refuse a first packet from a
+// stranger the newcomer's hello dies at the host's door and the room never
+// starts — the same standoff `punch` solves by exchanging two invites. This is
+// that exchange: the waiting side is given the newcomer's address and starts
+// sending, which is what opens its own filter to them.
+//
+// It carries no secret and grants nothing. Whoever is on the other end still
+// has to produce a hello under the room key to become a member.
+func (r *Room) Reach(ctx context.Context, endpoint *net.UDPAddr) {
+	if endpoint == nil {
+		return
+	}
+	go r.helloLoop(ctx, endpoint)
+}
+
+func (r *Room) helloLoop(ctx context.Context, endpoint *net.UDPAddr) {
 	hello := padded(r.identity.Public().Bytes())
 
 	ticker := time.NewTicker(helloInterval)
 	defer ticker.Stop()
 
 	for {
-		_ = r.mux.Send(r.roomCode.Seal(kindHello, hello), invite.Endpoint)
+		_ = r.mux.Send(r.roomCode.Seal(kindHello, hello), endpoint)
 		select {
 		case <-ctx.Done():
 			return

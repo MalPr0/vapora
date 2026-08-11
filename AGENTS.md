@@ -117,6 +117,12 @@ a signature is a change to the contract.
   terminal, and a cut invite looks copyable and decodes to nothing. The view
   wraps it and `joinToken` puts it back together on paste — a wrapped invite
   arriving by chat is the normal case, not the edge case.
+- **A room only ever answers a hello.** Nothing is sent to an address the room
+  has not heard from, so between two networks that both refuse a first packet
+  from a stranger the newcomer's hello dies at the host's door and waiting
+  longer never helps. `Room.Reach` is the way out and it is the room's version
+  of the second invite `punch` sends: it carries no secret and grants nothing,
+  it only makes this side start sending so its own router opens.
 - **The gutter is a promise.** A nickname reaches thirty characters and the
   gutter is capped at twenty and at a third of the screen, so `fitName` cuts
   rather than pads: `%-*s` widens for a long name, which shifts that speaker's

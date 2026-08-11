@@ -258,3 +258,79 @@ func TestRoomInviteRoundTrips(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// TestReachPunchesTowardsAnAddress covers the standoff `punch` already solves
+// with a second invite and a room did not: the host only ever answers a hello,
+// so between two networks that both refuse a first packet from a stranger, the
+// newcomer's hello dies at the host's door and waiting longer never helps.
+//
+// The filter itself lives in a router, not in this code. What this side has to
+// do is start sending — that is what puts the newcomer in its router's list of
+// addresses worth accepting from — so that is what is asserted here.
+func TestReachPunchesTowardsAnAddress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	secret, err := NewSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A bare socket standing in for the newcomer, which is not running a room
+	// yet: Reach must not need anything of the other end.
+	newcomer := listen(t)
+	defer newcomer.Close()
+
+	waiting := newNode(t, ctx, secret)
+	defer waiting.stop()
+
+	waiting.room.Reach(ctx, localAddr(t, newcomer))
+
+	if err := newcomer.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 2048)
+	read, from, err := newcomer.ReadFromUDP(buffer)
+	if err != nil {
+		t.Fatalf("the waiting side never punched towards the address it was given: %v", err)
+	}
+	if from.Port != waiting.addr.Port {
+		t.Fatalf("the packet came from %s, not from the waiting room at %s", from, waiting.addr)
+	}
+
+	// It is a hello under the room key, which is what the other side is
+	// listening for, and it carries no secret of its own.
+	frame, err := waiting.room.roomCode.Open(buffer[:read])
+	if err != nil {
+		t.Fatalf("what arrived is not a room frame: %v", err)
+	}
+	if frame.Kind != kindHello {
+		t.Fatalf("the waiting side sent kind %#x, want a hello", frame.Kind)
+	}
+}
+
+// Reach grants nothing on its own: an address is not a secret, and whoever is
+// on the other end still has to produce a hello under the room key to become a
+// member.
+func TestReachAloneAddsNobody(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	secret, err := NewSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stranger := listen(t)
+	defer stranger.Close()
+
+	waiting := newNode(t, ctx, secret)
+	defer waiting.stop()
+
+	waiting.room.Reach(ctx, localAddr(t, stranger))
+	time.Sleep(300 * time.Millisecond)
+
+	if members := waiting.room.Members(); len(members) != 0 {
+		t.Fatalf("punching towards an address made %d member(s) out of nothing", len(members))
+	}
+}

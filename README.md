@@ -191,6 +191,27 @@ While you are the one waiting for the first person, the screen keeps showing
 your invite — that is the whole reason to be waiting. Once somebody arrives the
 chat takes over, and `!invite` brings the invite back whenever you need it.
 
+### If nobody can get in
+
+Same cause as with two people, same fix. The person waiting only ever answers
+somebody who knocks first, so if both routers refuse a first packet from a
+stranger, the newcomer's knock dies at the door.
+
+Whoever cannot get in will see a line like *"if it stalls, send this back"* with
+their own address. They send it, and whoever is waiting **pastes it in** — the
+room starts punching towards them and the next knock gets through.
+
+You can find out in advance whether you will need this, for a whole room at
+once:
+
+```bash
+./vapora nat -room "CONE-PORT-18,SYM-PORT-F3"
+```
+
+Everyone runs `./vapora nat`, sends the short profile it prints, and one of you
+puts them all in that command. It says whether the room closes, who should open
+it, and — if some pair cannot reach each other at all — exactly which pair.
+
 ### Room commands
 
 - **`!who`** lists who is present and whether each connection is healthy.
@@ -198,6 +219,8 @@ chat takes over, and `!invite` brings the invite back whenever you need it.
 - **`!exit`** leaves and tells everyone.
 - **`-plain`** turns off the full-screen interface here too, for the same
   reason: when something goes wrong you want the output to stay on screen.
+- **Pasting an address** while you are waiting alone starts punching towards
+  it. That is the fix above; it is not a command and it needs no `!`.
 
 ---
 

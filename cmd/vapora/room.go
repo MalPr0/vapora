@@ -105,12 +105,31 @@ func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
 
 	if r.joining != nil {
 		fmt.Printf("\njoining the room at %s\n", r.joining.Endpoint)
+		time.AfterFunc(pasteHint, func() {
+			r.mu.Lock()
+			endpoint, joined := r.endpoint, r.joined
+			r.mu.Unlock()
+			if endpoint != nil && !joined {
+				fmt.Printf("-- if it stalls, send this back for them to paste:\n\n    %s\n\n", endpoint)
+			}
+		})
 		if err := r.room.Join(ctx, *r.joining, r.timeout); err != nil {
 			return err
 		}
+		r.mu.Lock()
+		r.joined = true
+		r.mu.Unlock()
 		fmt.Printf("you are in. You are %s\n", r.room.Me().Name)
 	} else {
+		r.mu.Lock()
+		r.joined = true
+		r.mu.Unlock()
 		fmt.Println("\nwaiting for somebody to join...")
+		time.AfterFunc(pasteHint, func() {
+			if len(r.room.Members()) == 0 {
+				fmt.Println("-- still nobody. If they cannot get in, paste the address their side printed.")
+			}
+		})
 	}
 
 	go r.watchMembers(ctx)
@@ -128,6 +147,7 @@ func (r *room) connect(ctx context.Context, chat *tui.Chat) error {
 		// hosting: going straight to an empty conversation leaves the host with
 		// nothing to send anyone.
 		chat.SetStatus("waiting for somebody to join", 0.2)
+		go r.offerPasteHint(ctx, chat)
 		if err := r.waitForCompany(ctx); err != nil {
 			return err
 		}
@@ -138,6 +158,7 @@ func (r *room) connect(ctx context.Context, chat *tui.Chat) error {
 	}
 
 	chat.SetStatus("joining the room", 0.2)
+	go r.offerWayBack(ctx, chat)
 	if err := r.room.Join(ctx, *r.joining, r.timeout); err != nil {
 		return err
 	}
@@ -212,6 +233,41 @@ func (r *room) show(endpoint *net.UDPAddr, chat *tui.Chat) {
 	fmt.Printf("\ninvite anyone with this, it is a runnable command:\n\n    %s\n\n", invite)
 }
 
+// offerPasteHint tells the host what to do when nobody arrives. Between two
+// networks that both refuse a first packet from a stranger, waiting alone never
+// works however long you wait, and nothing on screen would say so.
+func (r *room) offerPasteHint(ctx context.Context, chat *tui.Chat) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(pasteHint):
+	}
+	if len(r.room.Members()) > 0 {
+		return
+	}
+	chat.SetStatus("still nobody. If they cannot get in, paste the address their side printed", 0.4)
+}
+
+// offerWayBack gives the newcomer something to send back when their hello is
+// being dropped at the other end. Their own address is all the waiting side
+// needs: it carries no secret and grants nothing.
+func (r *room) offerWayBack(ctx context.Context, chat *tui.Chat) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(pasteHint):
+	}
+
+	r.mu.Lock()
+	endpoint, joined := r.endpoint, r.joined
+	r.mu.Unlock()
+
+	if endpoint == nil || joined {
+		return
+	}
+	chat.SetInvite("if it stalls, send this back for them to paste: " + endpoint.String())
+}
+
 // waitForCompany holds the host on the waiting screen until the first member
 // authenticates. Membership is a poll like everything else here: nothing
 // arrives to announce that somebody is about to arrive.
@@ -232,6 +288,40 @@ func (r *room) waitForCompany(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// reach takes what the other side sent back and starts punching towards it.
+// Accepts a whole room invite or a bare host:port, because somebody who cannot
+// get in will paste whichever of the two they were handed.
+func (r *room) reach(ctx context.Context, line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", false
+	}
+
+	endpoint := endpointIn(line)
+	if endpoint == nil {
+		return "", false
+	}
+
+	r.room.Reach(ctx, endpoint)
+	return endpoint.String(), true
+}
+
+// endpointIn digs an address out of whatever was pasted. Only the address is
+// used: a room is joined by producing a hello under its own secret, so an
+// address on its own grants nothing.
+func endpointIn(line string) *net.UDPAddr {
+	if invite, err := punch.ParseRoomInvite(line); err == nil {
+		return invite.Endpoint
+	}
+	for _, field := range strings.Fields(line) {
+		field = strings.TrimSuffix(field, ",")
+		if endpoint, err := net.ResolveUDPAddr("udp4", field); err == nil && endpoint.Port != 0 {
+			return endpoint
+		}
+	}
+	return nil
 }
 
 // note records why a session ended, and report writes it to the real screen
@@ -317,6 +407,7 @@ func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
 				continue
 			}
 			r.show(r.endpoint, nil)
+		case r.pastePlain(ctx, line):
 		case line != "":
 			r.room.Broadcast(line)
 		}
@@ -324,6 +415,21 @@ func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// pastePlain is the line based half of the paste back: an address the other
+// side printed, given to a room that nobody has reached yet.
+func (r *room) pastePlain(ctx context.Context, line string) bool {
+	if strings.HasPrefix(strings.TrimSpace(line), "!") || len(r.room.Members()) > 0 {
+		return false
+	}
+
+	where, ok := r.reach(ctx, line)
+	if !ok {
+		return false
+	}
+	fmt.Printf("-- punching towards %s, they have to be running too\n", where)
+	return true
 }
 
 func (r *room) listMembers() {

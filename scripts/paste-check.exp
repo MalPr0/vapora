@@ -1,0 +1,27 @@
+#!/usr/bin/expect -f
+set stty_init "rows 40 columns 200"
+set timeout 45
+log_user 0
+
+# The host waits without ever being given an invite to chase.
+spawn ./vapora room -port 42901 -advertise 127.0.0.1:42901
+set a $spawn_id
+expect -i $a -re "127\\.0\\.0\\.1:42901/\[A-Z2-7\]+"
+set ia $expect_out(0,string)
+
+spawn ./vapora room -port 42902 -advertise 127.0.0.1:42902 $ia
+set b $spawn_id
+
+# The host is handed the newcomer's bare address, which is what the newcomer's
+# side prints when its hello is going nowhere.
+send -i $a -- "127.0.0.1:42902\r"
+expect -i $a -re "punching towards 127.0.0.1:42902" ; puts "host accepted the pasted address"
+
+expect -i $b -re "you are" ; puts "newcomer got in"
+expect -i $a -re "joined" ; puts "host sees them"
+
+send -i $b -- "llegue igual\r"
+expect -i $a -re "llegue igual" ; puts "and they can talk"
+
+foreach id [list $a $b] { send -i $id -- "!exit\r" }
+puts "PASTE-BACK WORKS"

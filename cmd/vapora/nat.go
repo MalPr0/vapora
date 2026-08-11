@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MalPr0/vapora/pkg/diag"
@@ -14,6 +16,7 @@ const stunTimeout = 4 * time.Second
 func runNAT(args []string) error {
 	flags := flag.NewFlagSet("nat", flag.ContinueOnError)
 	pair := flags.String("pair", "", "combine with the profile the other side reported")
+	room := flags.String("room", "", "comma separated profiles of everyone who will be in a room")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -56,7 +59,11 @@ func runNAT(args []string) error {
 		fmt.Println("this NAT drops packets from peers it never contacted, so both sides must punch at once")
 	}
 
-	printProfile(diag.Profile{Mapping: report.Mapping, Filtering: report.Filtering}, *pair)
+	mine := diag.Profile{Mapping: report.Mapping, Filtering: report.Filtering}
+	if *room != "" {
+		return printMesh(mine, *room)
+	}
+	printProfile(mine, *pair)
 	return nil
 }
 
@@ -94,5 +101,66 @@ func printProfile(mine diag.Profile, theirs string) {
 	default:
 		fmt.Println("verdict: works, but one invite is not enough. Whoever joins gets a second")
 		fmt.Println("         line to send back, and it has to be pasted into the waiting side")
+	}
+}
+
+// printMesh answers the room question, which no pair of profiles can: a room is
+// every pair at once, and it can be partly broken in a way two-party advice has
+// no way to express.
+func printMesh(mine diag.Profile, others string) error {
+	members := []diag.Member{{Name: "you", Profile: mine}}
+
+	for i, code := range strings.Split(others, ",") {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		profile, err := diag.ParseProfile(code)
+		if err != nil {
+			return fmt.Errorf("profile %d: %w", i+1, err)
+		}
+		members = append(members, diag.Member{Name: fmt.Sprintf("person %d", i+1), Profile: profile})
+	}
+
+	if len(members) < 2 {
+		return errors.New("a room needs at least one other profile to say anything")
+	}
+
+	advice := diag.MeshOf(members)
+	fmt.Printf("\nyour profile: %s\n", mine.Code())
+	fmt.Printf("\nroom of %d: %s\n", len(members), advice.Reason)
+
+	for _, pair := range advice.Broken {
+		fmt.Printf("  %s and %s cannot connect: %s\n", pair.A, pair.B, pair.Reason)
+	}
+
+	switch {
+	case !advice.Closes:
+		fmt.Println("\nverdict: this room does not close. The pairs above stay silent to each")
+		fmt.Println("         other however well the rest of it works, because nobody relays")
+	case len(advice.Exchanges) > 0:
+		fmt.Printf("\nverdict: works, but not from one invite. %s opens the room.\n", hostName(advice.Hosts))
+		fmt.Println("         Everyone who cannot get in sends back the address their side")
+		fmt.Println("         prints, for whoever is waiting to paste in")
+	default:
+		fmt.Printf("\nverdict: works. %s opens the room and shares the invite.\n", hostName(advice.Hosts))
+		fmt.Println("         Anyone already in can invite the next person with !invite")
+	}
+	return nil
+}
+
+// hostName turns the candidates into words. Several names is an instruction to
+// agree, not a failure to answer — and they are named rather than left as "any
+// of you", because the person reading this is often not among them.
+func hostName(hosts []string) string {
+	switch len(hosts) {
+	case 0:
+		return "nobody here"
+	case 1:
+		return hosts[0]
+	case 2:
+		return strings.Join(hosts, " or ") + " (agree which)"
+	default:
+		return "any of " + strings.Join(hosts, ", ") + " (agree which)"
 	}
 }
