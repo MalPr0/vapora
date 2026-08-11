@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ func runNAT(args []string) error {
 	flags := flag.NewFlagSet("nat", flag.ContinueOnError)
 	pair := flags.String("pair", "", "combine with the profile the other side reported")
 	room := flags.String("room", "", "comma separated profiles of everyone who will be in a room")
+	port := flags.Int("port", 0, "measure this UDP port instead of one the OS picks")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -25,12 +27,29 @@ func runNAT(args []string) error {
 	defer cancel()
 
 	fmt.Println("probing NAT behaviour with public STUN servers...")
-	report, err := stun.Probe(ctx, stun.DefaultServers, stunTimeout)
+
+	// Filtering is a property of a port, not of a machine. A firewall rule that
+	// opens one port says nothing about any other, so measuring an ephemeral
+	// port on a server whose rule names 41000 answers the wrong question — and
+	// answers it wrongly, reporting the closed default rather than the port
+	// that will actually be used.
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: *port})
+	if err != nil {
+		return fmt.Errorf("cannot open UDP port %d: %w", *port, err)
+	}
+	defer conn.Close()
+
+	report, err := stun.ProbeWith(ctx, conn, stun.DefaultServers, stunTimeout)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("local UDP port: %d\n\n", report.LocalPort)
+	fmt.Printf("local UDP port: %d\n", report.LocalPort)
+	if *port == 0 {
+		fmt.Println("  (this is a port the OS picked. If a firewall rule opens one specific")
+		fmt.Println("   port, measure that one instead: vapora nat -port <the open port>)")
+	}
+	fmt.Println()
 	for _, observation := range report.Observations {
 		if observation.Err != nil {
 			fmt.Printf("  %-32s %s\n", observation.Server, observation.Err)
