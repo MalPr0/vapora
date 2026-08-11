@@ -150,8 +150,8 @@ func TestSessionIgnoresPacketsWithoutTheSecret(t *testing.T) {
 		t.Fatalf("cannot build the codec: %v", err)
 	}
 
-	waitingSession := NewSession(waiting, waitingCodec, &syncBuffer{})
-	friendSession := NewSession(friend, friendCodec, &syncBuffer{})
+	waitingSession := wired(t, waiting, waitingCodec, &syncBuffer{})
+	friendSession := wired(t, friend, friendCodec, &syncBuffer{})
 	friendSession.SetPeer(localAddr(t, waiting))
 
 	// The stranger floods the waiting side while it has no peer yet.

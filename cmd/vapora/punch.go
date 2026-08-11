@@ -31,6 +31,7 @@ const endpointTimeout = 15 * time.Second
 // takes over.
 type channel struct {
 	conn      *net.UDPConn
+	mux       *punch.Mux
 	session   *punch.Session
 	watcher   *stun.Watcher
 	secret    punch.Secret
@@ -74,9 +75,11 @@ func runPunch(args []string) error {
 		return err
 	}
 
+	mux := punch.NewMux(conn)
 	open := &channel{
 		conn:      conn,
-		session:   punch.NewSession(conn, codec, os.Stdout),
+		mux:       mux,
+		session:   punch.NewSession(mux, codec, os.Stdout),
 		watcher:   stun.NewWatcher(stun.DefaultServers, *keepalive),
 		secret:    secret,
 		role:      role,
@@ -89,11 +92,12 @@ func runPunch(args []string) error {
 		open.session.SetPeer(peer)
 	}
 
-	// The session owns the only reader of this socket from here on, and the
-	// endpoint watcher gets its answers through it. Querying STUN directly
-	// would mean a second reader, which on a UDP socket is a lottery over
-	// which one receives each datagram.
-	open.session.Sniff(open.watcher.Handle)
+	// The mux is the only reader of this socket. The watcher goes first because
+	// it is the more selective claimant: a STUN answer is recognisable by its
+	// header, while the session has to try to decrypt whatever is left.
+	mux.Fallback(punch.SinkFunc(open.watcher.Handle))
+	mux.Fallback(open.session)
+	go mux.Run(ctx)
 
 	if !*plain && tui.IsTerminal(os.Stdin) {
 		if err := runPunchUI(ctx, open); err == nil || !errors.Is(err, errNoTerminal) {

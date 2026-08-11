@@ -131,14 +131,30 @@ func rule(screen *Screen, y, width, color, bg int) {
 }
 
 func drawLoading(screen *Screen, state State, width, height int) {
-	middle := height / 2
+	screen.Text(2, headerHeight+1, state.Status, White, Navy)
 
-	screen.Text(2, middle-4, state.Status, White, Navy)
+	// Everything stands on one ground line, which is what makes the scene read
+	// as a level rather than as sprites floating at unrelated heights. The
+	// ground sits as low as whatever has to go under it allows.
+	ground := height - 3
+	if state.Invite != "" {
+		ground = height - 6
+	}
+	if ground < headerHeight+2 {
+		ground = headerHeight + 2
+	}
 
-	// The runner chases the flag as the punch proceeds, so the wait has a shape
-	// instead of a spinner that says nothing about progress.
-	flagX := width - 2 - flagSprite.Width()
-	flagSprite.Draw(screen, flagX, (middle-1)*2)
+	for x := 2; x < width-2; x++ {
+		screen.Set(x, ground, '▁', Green, Navy)
+	}
+
+	// Pixel rows are half a cell, so a sprite standing on the ground starts a
+	// its own height above it.
+	feet := ground * 2
+
+	flag := flagOfHeight(clampInt((ground-headerHeight)*2, MinFlagHeight, MaxFlagHeight))
+	flagX := width - 3 - flag.Width()
+	flag.Draw(screen, flagX, feet-flag.Height())
 
 	track := flagX - 4 - runnerFrames[0].Width()
 	runnerX := 4 + int(float64(track)*clamp(state.Progress))
@@ -146,18 +162,14 @@ func drawLoading(screen *Screen, state State, width, height int) {
 	if state.Frame%6 < 3 {
 		hop = -1
 	}
-	runnerFrames[state.Frame%len(runnerFrames)].Draw(screen, runnerX, (middle-1)*2+hop)
-
-	for x := 2; x < width-2; x++ {
-		screen.Set(x, middle+4, '▁', Green, Navy)
-	}
+	runnerFrames[state.Frame%len(runnerFrames)].Draw(screen, runnerX, feet-runnerFrames[0].Height()+hop)
 
 	bar := progressBar(width-8, state.Progress)
-	screen.Text(4, middle+6, bar, Lime, Navy)
+	screen.Text(4, ground+2, bar, Lime, Navy)
 
 	if state.Invite != "" {
-		screen.Text(2, middle+8, "SEND THIS TO YOUR FRIEND", Gold, Navy)
-		screen.Text(2, middle+9, state.Invite, White, Navy)
+		screen.Text(2, ground+4, "SEND THIS TO YOUR FRIEND", Gold, Navy)
+		screen.Text(2, ground+5, state.Invite, White, Navy)
 	}
 }
 
@@ -334,6 +346,16 @@ func drawCursor(screen *Screen, x, y int) {
 
 func dots(frame int) string {
 	return strings.Repeat(".", frame%4)
+}
+
+func clampInt(value, low, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func clamp(value float64) float64 {

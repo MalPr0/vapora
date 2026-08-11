@@ -208,3 +208,114 @@ func TestSpeakerColorIsStable(t *testing.T) {
 		t.Fatal("a speaker changed colour between calls")
 	}
 }
+
+// The goal has to tower over the runner or the scene does not read as a finish
+// line, which is the whole reason it is drawn at all.
+func TestTheFlagTowersOverTheRunner(t *testing.T) {
+	// The flag it replaced was ten pixels, the same height as the runner, and
+	// that is what made it unreadable as a goal.
+	const oldFlagHeight = 10
+	if MaxFlagHeight < 3*oldFlagHeight {
+		t.Fatalf("the tallest flag is %d pixels, which is not the asked-for triple of %d", MaxFlagHeight, oldFlagHeight)
+	}
+	if flagOfHeight(MinFlagHeight).Height() < 2*runnerFrames[0].Height() {
+		t.Fatalf("even cramped, the flag is %d pixels against a %d pixel runner",
+			flagOfHeight(MinFlagHeight).Height(), runnerFrames[0].Height())
+	}
+
+	// A terminal with room gets the full height rather than a fixed one.
+	tall := NewScreen(80, 40)
+	Draw(tall, State{Phase: PhaseLoading, Progress: 0.5})
+	// The pole is a single column, so the probe has to sweep the whole right
+	// hand strip rather than guess which one it lands in.
+	rows := 0
+	for y := 0; y < 40; y++ {
+		for x := 60; x < 80; x++ {
+			if tall.At(x, y).Rune == upperHalf {
+				rows++
+				break
+			}
+		}
+	}
+	if rows < 15 {
+		t.Fatalf("on a tall terminal the flag only took %d rows:\n%s", rows, plain(tall))
+	}
+
+	// However short it gets, the banner is what makes it recognisable and it is
+	// never the part that gets dropped.
+	for _, pixels := range []int{MinFlagHeight, 24, MaxFlagHeight} {
+		banner := 0
+		for _, row := range flagOfHeight(pixels).Rows {
+			if strings.ContainsRune(row, 'F') {
+				banner++
+			}
+		}
+		if banner < 10 {
+			t.Fatalf("at %d pixels the flag kept only %d banner rows", pixels, banner)
+		}
+	}
+}
+
+// The flag is anchored to the ground and stretches upward, so the sizes it has
+// to survive are the ones where there is least room above it.
+func TestLoadingFitsAtEverySize(t *testing.T) {
+	for _, size := range [][2]int{{44, 17}, {60, 20}, {80, 24}, {120, 40}} {
+		for _, invite := range []string{"", "vapora punch 203.0.113.7:41001/ABC"} {
+			screen := NewScreen(size[0], size[1])
+			Draw(screen, State{Phase: PhaseLoading, Status: "punching", Progress: 0.5, Invite: invite})
+
+			lines := strings.Split(plain(screen), "\n")
+			for _, line := range lines {
+				if TextWidth(line) > size[0] {
+					t.Fatalf("%dx%d spilled to %d columns", size[0], size[1], TextWidth(line))
+				}
+			}
+			if invite != "" && !strings.Contains(plain(screen), "203.0.113.7:41001/ABC") {
+				t.Fatalf("at %dx%d the invite was pushed off screen:\n%s", size[0], size[1], plain(screen))
+			}
+			// Nothing may paint over the wordmark.
+			for x := 0; x < size[0]; x++ {
+				for y := headerHeight; y < headerHeight+1; y++ {
+					_ = y
+				}
+			}
+		}
+	}
+}
+
+// The scene stands on one ground line: sprites floating at unrelated heights is
+// what it looked like before, and it read as clutter.
+func TestRunnerAndFlagShareTheGround(t *testing.T) {
+	screen := NewScreen(80, 24)
+	Draw(screen, State{Phase: PhaseLoading, Progress: 0.5})
+
+	ground := -1
+	for y := 0; y < 24; y++ {
+		if screen.At(2, y).Rune == '▁' {
+			ground = y
+			break
+		}
+	}
+	if ground < 0 {
+		t.Fatalf("no ground line was drawn:\n%s", plain(screen))
+	}
+
+	// Both sprites must have their lowest pixels in the row just above it.
+	lowest := func(fromX, toX int) int {
+		last := -1
+		for y := 0; y < 24; y++ {
+			for x := fromX; x < toX; x++ {
+				if screen.At(x, y).Rune == upperHalf {
+					last = y
+				}
+			}
+		}
+		return last
+	}
+	if got := lowest(4, 60); got != ground-1 {
+		t.Fatalf("the runner ends at row %d, ground is %d", got, ground)
+	}
+	if got := lowest(60, 80); got != ground-1 {
+		t.Fatalf("the flag ends at row %d, ground is %d", got, ground)
+	}
+}

@@ -82,8 +82,8 @@ func TestTypingReachesThePeer(t *testing.T) {
 	defer right.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	rightSession.Observe(observer)
 
 	leftSession.SetPeer(localAddr(t, right))

@@ -15,8 +15,8 @@ func pair(t *testing.T) (*Session, *Session, *recordingObserver, context.CancelF
 	t.Cleanup(func() { left.Close(); right.Close() })
 
 	observer := &recordingObserver{typing: make(chan bool, 8), messages: make(chan string, 8)}
-	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	rightSession.Observe(observer)
 
 	leftSession.SetPeer(localAddr(t, right))
@@ -119,7 +119,7 @@ func TestUnauthenticatedTrafficIsCountedAndNeverAnswered(t *testing.T) {
 		t.Fatalf("cannot build the codec: %v", err)
 	}
 
-	session := NewSession(home, codec, &syncBuffer{})
+	session := wired(t, home, codec, &syncBuffer{})
 	// The peer is somewhere else entirely: the stranger must be answered by
 	// nothing at all, and pings to a real peer would muddy that.
 	session.SetPeer(&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: freePort(t)})
@@ -163,7 +163,7 @@ func TestRunStopsOnCancellationUnderTraffic(t *testing.T) {
 	defer home.Close()
 	defer peer.Close()
 
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
+	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.SetPeer(localAddr(t, peer))
 
 	ctx, cancel := context.WithCancel(context.Background())

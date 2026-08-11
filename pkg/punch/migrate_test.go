@@ -27,7 +27,7 @@ func TestPeerIsFollowedToANewAddress(t *testing.T) {
 	defer newAddr.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
+	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, oldAddr))
 
@@ -66,7 +66,7 @@ func TestAHealthyPathDoesNotFollow(t *testing.T) {
 	defer stranger.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
+	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, peer))
 
@@ -102,7 +102,7 @@ func TestAnUnauthenticatedFrameNeverMoves(t *testing.T) {
 		t.Fatalf("cannot build the codec: %v", err)
 	}
 
-	session := NewSession(home, codec, &syncBuffer{})
+	session := wired(t, home, codec, &syncBuffer{})
 	session.SetPeer(localAddr(t, peer))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -124,16 +124,15 @@ func TestAnUnauthenticatedFrameNeverMoves(t *testing.T) {
 	}
 }
 
-// Sniff is how another protocol shares the one reader a UDP socket allows.
-func TestSniffClaimsForeignDatagrams(t *testing.T) {
+// A sink registered ahead of the session claims its own datagrams, which is how
+// the STUN watcher shares the one reader a UDP socket allows.
+func TestAnEarlierSinkClaimsItsOwnDatagrams(t *testing.T) {
 	home, other := listen(t), listen(t)
 	defer home.Close()
 	defer other.Close()
 
 	claimed := make(chan []byte, 4)
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
-	session.SetPeer(localAddr(t, other))
-	session.Sniff(func(payload []byte, _ *net.UDPAddr) bool {
+	watcher := SinkFunc(func(payload []byte, _ *net.UDPAddr) bool {
 		if len(payload) > 0 && payload[0] == 0xEE {
 			copied := make([]byte, len(payload))
 			copy(copied, payload)
@@ -142,6 +141,9 @@ func TestSniffClaimsForeignDatagrams(t *testing.T) {
 		}
 		return false
 	})
+
+	session := wired(t, home, plainCodec{}, &syncBuffer{}, watcher)
+	session.SetPeer(localAddr(t, other))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -155,7 +157,7 @@ func TestSniffClaimsForeignDatagrams(t *testing.T) {
 			t.Fatalf("got %q", payload)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("the sniffer never saw the datagram")
+		t.Fatal("the earlier sink never saw the datagram")
 	}
 }
 
@@ -166,7 +168,7 @@ func TestAQuietPathIsPunchedAgain(t *testing.T) {
 	defer home.Close()
 	defer peer.Close()
 
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
+	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.SetPeer(localAddr(t, peer))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,40 +187,6 @@ func TestAQuietPathIsPunchedAgain(t *testing.T) {
 		if kind, _, err := decode(buffer[:n]); err == nil && kind == kindPunch {
 			return
 		}
-	}
-}
-
-// Waiting is when an endpoint change matters most: the invite already shared is
-// the thing that stops working, and nobody is talking yet to notice.
-func TestSniffAlsoWorksWhileWaiting(t *testing.T) {
-	home, other := listen(t), listen(t)
-	defer home.Close()
-	defer other.Close()
-
-	claimed := make(chan struct{}, 4)
-	session := NewSession(home, plainCodec{}, &syncBuffer{})
-	session.SetPeer(localAddr(t, other))
-	session.Sniff(func(payload []byte, _ *net.UDPAddr) bool {
-		if len(payload) > 0 && payload[0] == 0xEE {
-			claimed <- struct{}{}
-			return true
-		}
-		return false
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Open, not Run: the session is still punching and nothing is established.
-	go session.Open(ctx, 3*time.Second)
-
-	time.Sleep(100 * time.Millisecond)
-	_, _ = other.WriteToUDP([]byte{0xEE}, localAddr(t, home))
-
-	select {
-	case <-claimed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("a shared socket saw nothing while the session was waiting")
 	}
 }
 
@@ -252,7 +220,7 @@ func TestAThirdHolderOfTheSecretCannotStealTheSession(t *testing.T) {
 	}
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, homeCodec, &syncBuffer{})
+	session := wired(t, home, homeCodec, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, peer))
 
@@ -321,7 +289,7 @@ func TestTheRealPeerIsStillFollowed(t *testing.T) {
 	}
 
 	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
-	session := NewSession(home, homeCodec, &syncBuffer{})
+	session := wired(t, home, homeCodec, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, oldAddr))
 

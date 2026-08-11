@@ -3,6 +3,7 @@ package punch
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -88,7 +89,7 @@ func TestOpenTimesOutWithoutPeer(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	session := NewSession(conn, plainCodec{}, &syncBuffer{})
+	session := wired(t, conn, plainCodec{}, &syncBuffer{})
 	session.SetPeer(&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: freePort(t)})
 
 	if err := session.Open(context.Background(), 400*time.Millisecond); err != ErrPunchTimeout {
@@ -102,7 +103,7 @@ func TestOpenAndExchangeMessages(t *testing.T) {
 	defer right.Close()
 
 	leftOutput, rightOutput := &syncBuffer{}, &syncBuffer{}
-	leftSession, rightSession := NewSession(left, plainCodec{}, leftOutput), NewSession(right, plainCodec{}, rightOutput)
+	leftSession, rightSession := wired(t, left, plainCodec{}, leftOutput), wired(t, right, plainCodec{}, rightOutput)
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -127,8 +128,8 @@ func TestOpenLearnsPeerFromIncomingPacket(t *testing.T) {
 	defer waiting.Close()
 	defer joining.Close()
 
-	waitingSession := NewSession(waiting, plainCodec{}, &syncBuffer{})
-	joiningSession := NewSession(joining, plainCodec{}, &syncBuffer{})
+	waitingSession := wired(t, waiting, plainCodec{}, &syncBuffer{})
+	joiningSession := wired(t, joining, plainCodec{}, &syncBuffer{})
 	joiningSession.SetPeer(localAddr(t, waiting))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -146,7 +147,7 @@ func TestSetPeerWhileOpenIsPickedUp(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession, rightSession := NewSession(left, plainCodec{}, &syncBuffer{}), NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession, rightSession := wired(t, left, plainCodec{}, &syncBuffer{}), wired(t, right, plainCodec{}, &syncBuffer{})
 	rightSession.SetPeer(localAddr(t, left))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -231,4 +232,23 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buffer.String()
+}
+
+// wired puts a session behind a mux, which is the only arrangement it supports:
+// a session never reads its own socket. Extra sinks are registered ahead of it,
+// the way the STUN watcher is in the real thing.
+func wired(t *testing.T, conn *net.UDPConn, codec Codec, output io.Writer, ahead ...Sink) *Session {
+	t.Helper()
+
+	mux := NewMux(conn)
+	session := NewSession(mux, codec, output)
+	for _, sink := range ahead {
+		mux.Fallback(sink)
+	}
+	mux.Fallback(session)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go mux.Run(ctx)
+	return session
 }

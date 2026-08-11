@@ -14,8 +14,8 @@ func TestPingAndPongNeverReachTheObserver(t *testing.T) {
 	defer right.Close()
 
 	observer := &recordingObserver{typing: make(chan bool, 8), messages: make(chan string, 8)}
-	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	rightSession.Observe(observer)
 
 	leftSession.SetPeer(localAddr(t, right))
@@ -53,8 +53,8 @@ func TestHealthReportsSilence(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -100,7 +100,7 @@ func TestHealthBeforeAPeerExists(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	if health := NewSession(conn, plainCodec{}, &syncBuffer{}).Health(); health.Link != LinkAlive {
+	if health := wired(t, conn, plainCodec{}, &syncBuffer{}).Health(); health.Link != LinkAlive {
 		t.Fatalf("an unopened session reported %s", health.Link)
 	}
 }
@@ -111,8 +111,8 @@ func TestAnyFrameRefreshesLiveness(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	leftSession := NewSession(left, plainCodec{}, &syncBuffer{})
-	rightSession := NewSession(right, plainCodec{}, &syncBuffer{})
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	leftSession.SetPeer(localAddr(t, right))
 	rightSession.SetPeer(localAddr(t, left))
 
@@ -147,7 +147,7 @@ func TestStalePongIsIgnored(t *testing.T) {
 	conn := listen(t)
 	defer conn.Close()
 
-	session := NewSession(conn, plainCodec{}, &syncBuffer{})
+	session := wired(t, conn, plainCodec{}, &syncBuffer{})
 	// Health reports nothing without a peer, so the session has to look open
 	// for the measurement to be observable at all.
 	session.SetPeer(localAddr(t, conn))
@@ -227,7 +227,7 @@ func TestEveryControlFrameOnTheWireVaries(t *testing.T) {
 			t.Fatalf("cannot build the codec: %v", err)
 		}
 
-		session := NewSession(home, homeCodec, &syncBuffer{})
+		session := wired(t, home, homeCodec, &syncBuffer{})
 		session.SetPeer(localAddr(t, peer))
 
 		ctx, cancel := context.WithCancel(context.Background())

@@ -3,7 +3,6 @@ package punch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -23,14 +22,17 @@ var ErrPunchTimeout = errors.New("punch: the peer never answered")
 
 // Session is a direct UDP path to a peer. The peer may be known upfront, from
 // an invite, or learned from the first packet that makes it through the NAT.
+//
+// It never reads: a mux owns the socket and hands it datagrams through Deliver.
 type Session struct {
-	conn   *net.UDPConn
+	wire   Wire
 	codec  Codec
 	output io.Writer
 
 	mu       sync.RWMutex
 	peer     *net.UDPAddr
 	open     bool
+	opened   chan struct{}
 	pending  []string
 	observer Observer
 
@@ -44,11 +46,16 @@ type Session struct {
 	knownSender  bool
 	departed     bool
 	probes       probeCount
-	sniff        func(payload []byte, from *net.UDPAddr) bool
 }
 
-func NewSession(conn *net.UDPConn, codec Codec, output io.Writer) *Session {
-	return &Session{conn: conn, codec: codec, output: output, observer: writerObserver{output}}
+func NewSession(wire Wire, codec Codec, output io.Writer) *Session {
+	return &Session{
+		wire:     wire,
+		codec:    codec,
+		output:   output,
+		observer: writerObserver{output},
+		opened:   make(chan struct{}),
+	}
 }
 
 // Observe redirects what arrives to a consumer that renders it itself.
@@ -85,162 +92,144 @@ func (s *Session) Peer() *net.UDPAddr {
 	return s.peer
 }
 
-// Open punches towards the peer while accepting packets from anyone. A peer set
-// later, by pasting an invite, is picked up by the running punch loop.
+// Open punches towards the peer until one answers. A peer set later, by pasting
+// an invite, is picked up by the running punch loop.
 func (s *Session) Open(ctx context.Context, timeout time.Duration) error {
 	openCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	go s.punchLoop(openCtx)
 
-	buffer := make([]byte, readBufferSize)
-	for {
-		if err := s.conn.SetReadDeadline(time.Now().Add(punchInterval)); err != nil {
-			return fmt.Errorf("punch: cannot set read deadline: %w", err)
-		}
-
-		n, from, err := s.conn.ReadFromUDP(buffer)
-		if err != nil {
-			if openCtx.Err() == nil {
-				continue
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return ErrPunchTimeout
-		}
-
-		// Whoever shares this socket gets its datagrams here too. Waiting is
-		// exactly when an endpoint change matters most, because the invite
-		// already handed out is the thing that stops working.
-		if s.sniffed(buffer[:n], from) {
-			continue
-		}
-
-		// A frame that does not authenticate is someone else's packet: the
-		// secret is what keeps a stranger from becoming the peer. Nothing is
-		// sent back, so a scanner learns nothing from probing here, but the
-		// attempt is counted: waiting is exactly when an address that only
-		// ever appeared on one invite would be found by somebody sweeping.
-		frame, err := s.codec.Open(buffer[:n])
-		if err != nil {
-			s.countProbe(from)
-			continue
-		}
-		if frame.Kind != kindPunch && frame.Kind != kindAck {
-			continue
-		}
-		kind := frame.Kind
-
-		peer := s.Peer()
-		if peer != nil && !sameEndpoint(peer, from) {
-			continue
-		}
-		if peer == nil {
-			// The invite went one way only and their packet still got in.
-			// Announcing it is the caller's business: a session that writes to
-			// a stream of its own lands in the middle of whatever a UI drew.
-			s.SetPeer(from)
-		}
-
-		// The handshake is where the peer stops being an address and becomes a
-		// codec instance, which is what a later move gets checked against.
-		s.rememberSender(frame.Sender)
-
-		// A punch proves the peer reaches us; the ack closes the other way.
-		if kind == kindPunch {
-			s.send(kindAck, pad())
-		}
-		s.flushPending()
+	select {
+	case <-s.opened:
 		return nil
+	case <-openCtx.Done():
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrPunchTimeout
 	}
 }
 
+// Run keeps the path warm until the context is cancelled. Datagrams arrive
+// through Deliver, so there is nothing to read here.
+func (s *Session) Run(ctx context.Context) error {
+	s.heard()
+	go s.pingLoop(ctx)
+
+	<-ctx.Done()
+	return nil
+}
+
+// Deliver handles one datagram and reports whether it belonged to this session.
+func (s *Session) Deliver(payload []byte, from *net.UDPAddr) bool {
+	frame, err := s.codec.Open(payload)
+	if err != nil {
+		// A frame that does not authenticate is someone else's packet: the
+		// secret is what keeps a stranger from becoming the peer. Nothing is
+		// sent back, so a scanner learns nothing from probing here, but the
+		// attempt is counted: an address that only ever appeared on one invite
+		// should not be hearing from anybody else.
+		s.countProbe(from)
+		return false
+	}
+
+	// A punch or its ack establishes the path. Anything else falls through:
+	// the peer's first message can outrun the ack, and dropping it because the
+	// handshake has not finished loses a line that authenticated.
+	if !s.established() && s.handshake(frame, from) {
+		return true
+	}
+	if !s.accept(from, frame.Sender) {
+		return false
+	}
+
+	// Every frame that authenticates is proof of life, whatever it carries.
+	s.heard()
+	s.handle(frame)
+	return true
+}
+
+// handshake is the part of Deliver that runs before a path exists: only a punch
+// or its ack can establish one.
+func (s *Session) handshake(frame Opened, from *net.UDPAddr) bool {
+	if frame.Kind != kindPunch && frame.Kind != kindAck {
+		return false
+	}
+
+	peer := s.Peer()
+	if peer != nil && !sameEndpoint(peer, from) {
+		return false
+	}
+	if peer == nil {
+		// The invite went one way only and their packet still got in.
+		// Announcing it is the caller's business: a session that writes to a
+		// stream of its own lands in the middle of whatever a UI drew.
+		s.SetPeer(from)
+	}
+
+	// The handshake is where the peer stops being an address and becomes a
+	// codec instance, which is what a later move gets checked against.
+	s.rememberSender(frame.Sender)
+	s.heard()
+
+	// A punch proves the peer reaches us; the ack closes the other way.
+	if frame.Kind == kindPunch {
+		s.send(kindAck, pad())
+	}
+	s.flushPending()
+	return true
+}
+
+func (s *Session) handle(frame Opened) {
+	switch frame.Kind {
+	case kindMessage:
+		// Only text crosses this channel. A frame carrying anything else is
+		// not this program on the other end, so it is dropped rather than
+		// cleaned up and shown.
+		if text.Valid(frame.Payload) {
+			s.events().Message(frame.Payload)
+		}
+	case kindBye:
+		s.depart()
+	case kindTyping:
+		s.events().Typing(len(frame.Payload) > 0 && frame.Payload[0] == '1')
+	case kindPing:
+		// The pong echoes the sequence but pads independently, so a reply is
+		// not recognisable by matching the size of what prompted it.
+		if seq, ok := readSequence(frame.Payload); ok {
+			s.send(kindPong, sequencePayload(seq))
+		}
+	case kindPong:
+		s.receivePong(frame.Payload)
+	case kindPunch:
+		// The peer is still handshaking because our ack was lost.
+		s.send(kindAck, pad())
+	}
+}
+
+func (s *Session) established() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.open
+}
+
 // flushPending delivers whatever was typed before the path was open, so an
-// eager first message is not silently lost.
+// eager first message is not silently lost, and releases Open.
 func (s *Session) flushPending() {
 	s.mu.Lock()
+	if s.open {
+		s.mu.Unlock()
+		return
+	}
 	pending := s.pending
 	s.pending = nil
 	s.open = true
+	close(s.opened)
 	s.mu.Unlock()
 
 	for _, message := range pending {
 		s.send(kindMessage, message)
-	}
-}
-
-// Run pumps incoming messages to the output until the context is cancelled.
-func (s *Session) Run(ctx context.Context) error {
-	if err := s.conn.SetReadDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("punch: cannot clear read deadline: %w", err)
-	}
-
-	s.heard()
-	go s.pingLoop(ctx)
-
-	// Cancelling a context does not interrupt a blocked read, and a peer that
-	// keeps pinging keeps this loop busy enough that it would never look. A
-	// deadline in the past is what turns the cancellation into a wakeup.
-	go func() {
-		<-ctx.Done()
-		_ = s.conn.SetReadDeadline(time.Now())
-	}()
-
-	buffer := make([]byte, readBufferSize)
-	for {
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		n, from, err := s.conn.ReadFromUDP(buffer)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return fmt.Errorf("punch: read failed: %w", err)
-		}
-		if s.sniffed(buffer[:n], from) {
-			continue
-		}
-
-		frame, err := s.codec.Open(buffer[:n])
-		if err != nil {
-			s.countProbe(from)
-			continue
-		}
-		if !s.accept(from, frame.Sender) {
-			continue
-		}
-		kind, payload := frame.Kind, frame.Payload
-		// Every frame that authenticates is proof of life, whatever it carries.
-		s.heard()
-
-		switch kind {
-		case kindMessage:
-			// Only text crosses this channel. A frame carrying anything else
-			// is not this program on the other end, so it is dropped rather
-			// than cleaned up and shown.
-			if !text.Valid(payload) {
-				continue
-			}
-			s.events().Message(payload)
-		case kindBye:
-			s.depart()
-		case kindTyping:
-			s.events().Typing(len(payload) > 0 && payload[0] == '1')
-		case kindPing:
-			// The pong echoes the sequence but pads independently, so a reply
-			// is not recognisable by matching the size of what prompted it.
-			if seq, ok := readSequence(payload); ok {
-				s.send(kindPong, sequencePayload(seq))
-			}
-		case kindPong:
-			s.receivePong(payload)
-		case kindPunch:
-			// The peer is still handshaking because our ack was lost.
-			s.send(kindAck, pad())
-		}
 	}
 }
 
@@ -286,29 +275,11 @@ func (s *Session) send(kind byte, payload string) {
 	if peer == nil {
 		return
 	}
-	_, _ = s.conn.WriteToUDP(s.codec.Seal(kind, payload), peer)
+	_ = s.wire.Send(s.codec.Seal(kind, payload), peer)
 }
 
 func sameEndpoint(a, b *net.UDPAddr) bool {
 	return a.IP.Equal(b.IP) && a.Port == b.Port
-}
-
-// Sniff hands datagrams that are not from the peer to another protocol sharing
-// this socket. There can only be one reader on a UDP socket, so anything else
-// that needs to see traffic has to be dispatched from here rather than reading
-// alongside.
-func (s *Session) Sniff(handler func(payload []byte, from *net.UDPAddr) bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sniff = handler
-}
-
-func (s *Session) sniffed(payload []byte, from *net.UDPAddr) bool {
-	s.mu.RLock()
-	handler := s.sniff
-	s.mu.RUnlock()
-
-	return handler != nil && handler(payload, from)
 }
 
 // accept decides whether an authenticated frame from this address belongs to
@@ -322,12 +293,9 @@ func (s *Session) sniffed(payload []byte, from *net.UDPAddr) bool {
 //
 // A move is therefore only followed when the sender matches the one already
 // established, and only once the path has gone quiet, which keeps a healthy
-// conversation from flapping between addresses. Before anyone has spoken there
-// is nobody to displace and first authenticated frame wins, exactly as during
-// the handshake; the rule is that you cannot be replaced once you have spoken.
-// A peer that restarted has a new sender and is deliberately not followed: a
-// restarted process is a new session, and treating it as a move is the same
-// mistake seen from the inside.
+// conversation from flapping between addresses. A peer that restarted has a new
+// sender and is deliberately not followed: a restarted process is a new
+// session, and treating it as a move is the same mistake seen from the inside.
 func (s *Session) accept(from *net.UDPAddr, sender Sender) bool {
 	peer := s.Peer()
 	if peer == nil {
@@ -349,19 +317,15 @@ func (s *Session) accept(from *net.UDPAddr, sender Sender) bool {
 	}
 
 	s.mu.Lock()
-	established := s.knownSender
-	mismatch := established && s.peerSender != sender
-	if mismatch {
-		s.mu.Unlock()
+	defer s.mu.Unlock()
+
+	if s.knownSender && s.peerSender != sender {
 		return false
 	}
 	s.peer = from
 	s.moves++
-	if !established {
-		s.peerSender = sender
-		s.knownSender = true
-	}
-	s.mu.Unlock()
+	s.peerSender = sender
+	s.knownSender = true
 	return true
 }
 

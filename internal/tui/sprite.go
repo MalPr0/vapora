@@ -166,21 +166,36 @@ var courierFrames = []Sprite{
 	},
 }
 
-var flagSprite = Sprite{
-	Palette: map[rune]int{'P': Silver, 'F': Green, 'K': Lime},
-	Rows: []string{
-		"PFFFF ",
-		"PFFKK ",
-		"PFFFF ",
-		"PKK   ",
-		"P     ",
-		"P     ",
-		"P     ",
-		"P     ",
-		"P     ",
-		"PPP   ",
-	},
+// flagOfHeight builds the goal at the end of the run. The banner and the base
+// are fixed and the pole stretches, so the flag is as tall as the screen allows
+// without ever losing the part that makes it recognisable. Clipping a tall
+// sprite instead would cut exactly that, since the banner is at the top.
+func flagOfHeight(pixels int) Sprite {
+	rows := []string{"  T     ", "  P     "}
+	banner := []string{
+		"  PFFFFF", "  PFFFFF", "  PFFKKF", "  PFFKKF",
+		"  PFFFFF", "  PFFFFF", "  PFFFF ", "  PFFF  ",
+		"  PFF   ", "  PF    ",
+	}
+	base := []string{" BBB    ", "BBBBB   ", "BBBBB   ", "BBBBB   "}
+
+	rows = append(rows, banner...)
+	for len(rows)+len(base) < pixels {
+		rows = append(rows, "  P     ")
+	}
+	return Sprite{
+		Palette: map[rune]int{'P': Silver, 'F': Green, 'K': Lime, 'B': Brown, 'T': Gold},
+		Rows:    append(rows, base...),
+	}
 }
+
+// The goal is drawn as tall as the terminal allows. The old ten pixel flag read
+// as a stray mark; the maximum is four times that, and even the minimum is
+// twice the runner, so the scene says "finish line" at any size that fits.
+const (
+	MinFlagHeight = 20
+	MaxFlagHeight = 40
+)
 
 // glyphs is a five by seven font. A cell is about twice as tall as it is wide,
 // so a wordmark built from whole block characters comes out stretched and

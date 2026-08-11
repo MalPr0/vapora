@@ -56,12 +56,14 @@ a signature is a change to the contract.
 - **Liveness is a poll, not an event.** Nothing arrives to announce that
   nothing is arriving, so `Session.Health` computes from a timestamp rather
   than firing a callback. Any authenticated frame refreshes it.
-- **One reader, dispatched, and never interrupted.** `Session.Sniff` is how
-  another protocol shares the socket; it is the seed of the demultiplexer, not
-  a workaround. Writes are safe from any goroutine, reads are not. The subtle
-  part is the gap: between `Open` returning and `Run` starting, nothing
-  dispatches, so waiting on something the socket must deliver starves it. Never
-  block between the two.
+- **`punch.Mux` is the only reader of a socket.** A session never reads: it is
+  handed datagrams through `Deliver`. Writes are safe from any goroutine, reads
+  are not. This is what dissolved the old trap of starving a lookup between
+  `Open` and `Run`; there is no longer a gap where nothing dispatches.
+- **A sink must not block, and must not keep the payload.** The buffer is
+  reused as soon as `Deliver` returns, and every sink shares one reader.
+- **Never dispatch with the route lock held.** A sink calls `Route`/`Unroute`
+  from inside `Deliver`, so the mux copies what it needs and releases first.
 - **Holding the secret does not make you the peer.** Everyone handed the same
   invite seals under the same key, so authentication alone cannot tell the peer
   from a third party. `Opened.Sender` is the nonce prefix, drawn per codec, so
