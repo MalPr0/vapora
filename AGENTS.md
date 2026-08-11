@@ -45,6 +45,7 @@ not the product and carries no compatibility promises.
 | `internal/tcpchat` | Demo TCP chat for the UPnP path, from before any of this |
 | `examples/filedrop` | Proof the transport carries something that is not a chat |
 | `examples/apitour` | Every ARCHITECTURE.md snippet, so the docs cannot drift |
+| `examples/pong` | Two player game and its tutorial: state over the same channel |
 
 `scripts/mesh-check.exp` drives three real rooms through pseudo-terminals with
 `expect`: keyboard in, screen out, chained invites. It is the only check that
@@ -75,6 +76,10 @@ and that separation is load-bearing rather than tidy:
   `ARCHITECTURE.md` lives in `examples/apitour`, so a signature change breaks the
   build rather than leaving a page that quietly lies. Two snippets were wrong the
   first time they were written; this is how that was found.
+- **A game and a conversation want opposite things from the channel.** A chat
+  sends events and every one matters; a game sends the whole world thirty times
+  a second and only the last matters. `examples/pong` is the second case, and
+  the fact that neither needed the transport to change is what the split bought.
 - **`examples/filedrop` is the test of all of the above.** It moves a file with
   no chat, no nicknames and no terminal, and nothing in `pkg/punch` changed to
   allow it. If a future change makes that example awkward, the layering has

@@ -276,6 +276,23 @@ Honest limitations, not fine print.
 
 ---
 
+## Example implementations
+
+Two programs built on the same channel, doing opposite things with it. Both are
+short enough to read in a sitting, and both are here to be copied.
+
+| | |
+|---|---|
+| **[Pong](examples/pong)** — a tutorial | Two players, two houses, no server. Sends **state** thirty times a second and only cares about the last one. Comes with a step-by-step walkthrough. |
+| **[filedrop](examples/filedrop)** | Moves a file between two machines. No chat, no nicknames, no terminal. |
+| **`vapora punch` / `room`** | The chat in this repo. Sends **events**, where every one matters. |
+
+That a game and a conversation want opposite things from the same transport —
+freshness versus delivery — and that neither needed the transport to change, is
+the clearest evidence the layering is real.
+
+---
+
 ## Use it for something else
 
 The chat is one thing built on the channel, not the point of it. The transport
