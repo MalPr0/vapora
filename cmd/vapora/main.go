@@ -96,11 +96,22 @@ punch flags:
   -plain      skip the full screen UI and use plain lines
 
 room flags:
-  -port       local UDP port, 0 lets the OS choose
-  -timeout    how long to keep trying before giving up (default 3m)
-  -keepalive  how often to refresh the NAT binding (default 25s)
-  commands:   !who lists who is present, !invite prints a fresh invite,
-              !exit leaves
+  -port        local UDP port, 0 lets the OS choose
+  -timeout     how long to keep trying before giving up (default 3m)
+  -keepalive   how often to refresh the NAT binding (default 25s)
+  -plain       skip the full screen UI and use plain lines
+  -standalone  stay open with nobody else here. Off by default, so a room
+               cannot outlive the conversation in it
+  -discover    also find each other through the BitTorrent DHT. Publishes
+               your address on a public network
+  commands:    !who lists who is present, !invite prints a fresh invite,
+               !exit leaves
+
+nat flags:
+  -port      measure this UDP port instead of one the OS picks, which is
+             what a firewall rule opening one specific port calls for
+  -pair      combine with the profile the other side reported
+  -room      comma separated profiles of everyone who will be in a room
 
 diag flags:
   -only      run just one part: pcp or filter
