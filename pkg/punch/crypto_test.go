@@ -29,9 +29,9 @@ func codecPair(t *testing.T) (*SecretCodec, *SecretCodec, Secret) {
 func TestSecretCodecRoundTripsBothDirections(t *testing.T) {
 	inviter, joiner, _ := codecPair(t)
 
-	wire := inviter.Seal(kindMessage, "hola")
+	wire := inviter.Seal(kindData, "hola")
 	frame, err := joiner.Open(wire)
-	if err != nil || frame.Kind != kindMessage || frame.Payload != "hola" {
+	if err != nil || frame.Kind != kindData || frame.Payload != "hola" {
 		t.Fatalf("got %+v err %v", frame, err)
 	}
 
@@ -44,7 +44,7 @@ func TestSecretCodecRoundTripsBothDirections(t *testing.T) {
 func TestSecretCodecHidesThePayload(t *testing.T) {
 	inviter, _, _ := codecPair(t)
 
-	wire := inviter.Seal(kindMessage, "cuenta bancaria")
+	wire := inviter.Seal(kindData, "cuenta bancaria")
 	if bytes.Contains(wire, []byte("cuenta bancaria")) {
 		t.Fatal("the payload travels in clear")
 	}
@@ -65,7 +65,7 @@ func TestSecretCodecRejectsAnotherSecret(t *testing.T) {
 func TestSecretCodecKeysAreDirectional(t *testing.T) {
 	inviter, _, _ := codecPair(t)
 
-	wire := inviter.Seal(kindMessage, "eco")
+	wire := inviter.Seal(kindData, "eco")
 	if _, err := inviter.Open(wire); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("got %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSecretCodecKeysAreDirectional(t *testing.T) {
 func TestSecretCodecRejectsTampering(t *testing.T) {
 	inviter, joiner, _ := codecPair(t)
 
-	wire := inviter.Seal(kindMessage, "hola")
+	wire := inviter.Seal(kindData, "hola")
 	wire[len(wire)-1] ^= 0xFF
 
 	if _, err := joiner.Open(wire); !errors.Is(err, ErrUnauthenticated) {
@@ -85,7 +85,7 @@ func TestSecretCodecRejectsTampering(t *testing.T) {
 func TestSecretCodecRejectsReplay(t *testing.T) {
 	inviter, joiner, _ := codecPair(t)
 
-	wire := inviter.Seal(kindMessage, "una sola vez")
+	wire := inviter.Seal(kindData, "una sola vez")
 	if _, err := joiner.Open(wire); err != nil {
 		t.Fatalf("the first delivery must pass: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSecretCodecToleratesReordering(t *testing.T) {
 
 	var frames [][]byte
 	for i := 0; i < 5; i++ {
-		frames = append(frames, inviter.Seal(kindMessage, "x"))
+		frames = append(frames, inviter.Seal(kindData, "x"))
 	}
 
 	for _, index := range []int{4, 0, 3, 1, 2} {

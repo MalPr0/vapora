@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
+	"github.com/MalPr0/vapora/pkg/chat"
 	"github.com/MalPr0/vapora/pkg/punch"
 )
 
@@ -26,29 +27,30 @@ func runRoomUI(ctx context.Context, open *room) error {
 		open.report()
 	}()
 
-	chat := tui.NewChat(terminal, open.room.Me().Name)
-	chat.OnSend(open.room.Broadcast)
-	chat.OnTyping(open.room.SetTyping)
-	chat.OnCommand(func(line string) bool { return open.command(line, chat) })
-	open.room.Observe(roomObserver{chat: chat})
+	view := tui.NewChat(terminal, open.group.Me().Name)
+	view.OnSend(open.group.Say)
+	view.OnTyping(open.group.SetTyping)
+	view.OnCommand(func(line string) bool { return open.command(line, view) })
+	open.group.OnLine(func(from chat.Speaker, line string) { view.Message(from.Name, line) })
+	open.group.OnTyping(func(from chat.Speaker, active bool) { view.Typing(from.Name, active) })
 
 	uiCtx, stopUI := context.WithCancel(ctx)
 	defer stopUI()
 
 	done := make(chan error, 1)
-	go func() { done <- chat.Run(uiCtx) }()
+	go func() { done <- view.Run(uiCtx) }()
 
 	go func() {
-		if err := open.connect(uiCtx, chat); err != nil {
+		if err := open.connect(uiCtx, view); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return // the user quit while waiting; report() says so already
 			}
 			open.note(err.Error())
-			chat.Closed(err.Error())
+			view.Closed(err.Error())
 			return
 		}
-		chat.Connected(open.room.Me().Name)
-		go open.pushRoster(uiCtx, chat)
+		view.Connected(open.group.Me().Name)
+		go open.pushRoster(uiCtx, view)
 	}()
 
 	return <-done
@@ -57,7 +59,7 @@ func runRoomUI(ctx context.Context, open *room) error {
 // pushRoster keeps the header current. Everything about a path is polled, and
 // so is who is present: nothing arrives to announce that somebody stopped
 // arriving.
-func (r *room) pushRoster(ctx context.Context, chat *tui.Chat) {
+func (r *room) pushRoster(ctx context.Context, view *tui.Chat) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -67,14 +69,14 @@ func (r *room) pushRoster(ctx context.Context, chat *tui.Chat) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			members := r.room.Members()
+			members := r.group.Speakers()
 
 			participants := make([]tui.Participant, 0, len(members))
 			present := map[punch.PublicKey]string{}
 			for _, member := range members {
 				present[member.Key] = member.Name
 				if _, seen := known[member.Key]; !seen {
-					chat.System(member.Name + " joined")
+					view.System(member.Name + " joined")
 				}
 				participants = append(participants, tui.Participant{
 					Name:    member.Name,
@@ -85,15 +87,15 @@ func (r *room) pushRoster(ctx context.Context, chat *tui.Chat) {
 			}
 			for key, name := range known {
 				if _, still := present[key]; !still {
-					chat.System(name + " left")
+					view.System(name + " left")
 				}
 			}
 			known = present
-			chat.SetMembers(participants)
+			view.SetMembers(participants)
 
-			if !r.quorum(stillHere(members)) {
-				chat.System("everybody left, so the room is closing")
-				chat.Quit()
+			if !r.quorum(stillHereNamed(members)) {
+				view.System("everybody left, so the room is closing")
+				view.Quit()
 				return
 			}
 		}
@@ -101,16 +103,16 @@ func (r *room) pushRoster(ctx context.Context, chat *tui.Chat) {
 }
 
 // command handles the lines that are instructions rather than conversation.
-func (r *room) command(line string, chat *tui.Chat) bool {
+func (r *room) command(line string, view *tui.Chat) bool {
 	switch {
 	case isExit(line):
 		r.room.Goodbye()
-		chat.Quit()
+		view.Quit()
 		return true
 	case trimmed(line) == "!who":
-		chat.System(r.describeMembers())
+		view.System(r.describeMembers())
 		return true
-	case r.pasteWhileWaiting(line, chat):
+	case r.pasteWhileWaiting(line, view):
 		return true
 	case trimmed(line) == "!invite":
 		r.mu.Lock()
@@ -118,10 +120,10 @@ func (r *room) command(line string, chat *tui.Chat) bool {
 		r.mu.Unlock()
 
 		if invite == "" {
-			chat.System("no address to put on an invite yet")
+			view.System("no address to put on an invite yet")
 			return true
 		}
-		chat.System(invite)
+		view.System(invite)
 		return true
 	}
 	return false
@@ -130,7 +132,7 @@ func (r *room) command(line string, chat *tui.Chat) bool {
 // pasteWhileWaiting takes an address the other side sent back. It only applies
 // before anybody is here: once the room has members, a line that looks like an
 // address is far more likely to be somebody talking about one.
-func (r *room) pasteWhileWaiting(line string, chat *tui.Chat) bool {
+func (r *room) pasteWhileWaiting(line string, view *tui.Chat) bool {
 	if strings.HasPrefix(strings.TrimSpace(line), "!") || len(r.room.Members()) > 0 {
 		return false
 	}
@@ -139,12 +141,12 @@ func (r *room) pasteWhileWaiting(line string, chat *tui.Chat) bool {
 	if !ok {
 		return false
 	}
-	chat.System("punching towards " + where + ", they have to be running too")
+	view.System("punching towards " + where + ", they have to be running too")
 	return true
 }
 
 func (r *room) describeMembers() string {
-	members := r.room.Members()
+	members := r.group.Speakers()
 	if len(members) == 0 {
 		return "nobody else is here yet"
 	}
@@ -154,18 +156,4 @@ func (r *room) describeMembers() string {
 		description += fmt.Sprintf("  %s (%s)", member.Name, member.Health.Link)
 	}
 	return description
-}
-
-// roomObserver hands what the room reports to the view, which already names
-// every speaker.
-type roomObserver struct {
-	chat *tui.Chat
-}
-
-func (o roomObserver) Message(from punch.Member, payload string) {
-	o.chat.Message(from.Name, payload)
-}
-
-func (o roomObserver) Typing(from punch.Member, active bool) {
-	o.chat.Typing(from.Name, active)
 }

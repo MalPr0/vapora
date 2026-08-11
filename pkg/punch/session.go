@@ -7,8 +7,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/MalPr0/vapora/pkg/text"
 )
 
 const (
@@ -70,15 +68,6 @@ func (s *Session) events() Observer {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.observer
-}
-
-// SetTyping tells the peer whether a line is in progress here.
-func (s *Session) SetTyping(active bool) {
-	flag := byte('0')
-	if active {
-		flag = '1'
-	}
-	s.send(kindTyping, padded([]byte{flag}))
 }
 
 func (s *Session) SetPeer(peer *net.UDPAddr) {
@@ -200,17 +189,13 @@ func (s *Session) handshake(frame Opened, from *net.UDPAddr) bool {
 
 func (s *Session) handle(frame Opened) {
 	switch frame.Kind {
-	case kindMessage:
-		// Only text crosses this channel. A frame carrying anything else is
-		// not this program on the other end, so it is dropped rather than
-		// cleaned up and shown.
-		if text.Valid(frame.Payload) {
-			s.events().Message(frame.Payload)
-		}
+	case kindData:
+		// What the caller put in is what the caller gets out. This package has
+		// no opinion about it, which is what lets the same channel carry a
+		// conversation, a file, or the state of a game.
+		s.events().Data([]byte(frame.Payload))
 	case kindBye:
 		s.depart()
-	case kindTyping:
-		s.events().Typing(len(frame.Payload) > 0 && frame.Payload[0] == '1')
 	case kindPing:
 		// The pong echoes the sequence but pads independently, so a reply is
 		// not recognisable by matching the size of what prompted it.
@@ -265,26 +250,27 @@ func (s *Session) flushPending() {
 	close(s.opened)
 	s.mu.Unlock()
 
-	for _, message := range pending {
-		s.send(kindMessage, message)
+	for _, payload := range pending {
+		s.send(kindData, payload)
 	}
 }
 
-// SendMessage queues the line while the path is still being negotiated and
-// sends it straight away once it is open. The line is sanitised first, so this
-// channel carries text and nothing else, whatever the caller handed over.
-func (s *Session) SendMessage(line string) {
-	line = text.Safe(line)
-
+// Send queues the payload while the path is still being negotiated and sends it
+// straight away once it is open.
+//
+// The bytes are carried as given. Deciding what may cross — that it is text,
+// that it is short enough to be worth a datagram, that a terminal can be
+// trusted with it — belongs to whoever knows what the bytes mean.
+func (s *Session) Send(payload []byte) {
 	s.mu.Lock()
 	if !s.open {
-		s.pending = append(s.pending, line)
+		s.pending = append(s.pending, string(payload))
 		s.mu.Unlock()
 		return
 	}
 	s.mu.Unlock()
 
-	s.send(kindMessage, line)
+	s.send(kindData, string(payload))
 }
 
 // Goodbye tells the peer this side is leaving, so it can say so at once instead

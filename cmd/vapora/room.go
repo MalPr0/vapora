@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
+	"github.com/MalPr0/vapora/pkg/chat"
 	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/stun"
 	"github.com/MalPr0/vapora/pkg/text"
@@ -25,6 +26,7 @@ type room struct {
 	conn      *net.UDPConn
 	mux       *punch.Mux
 	room      *punch.Room
+	group     *chat.Group
 	watcher   *stun.Watcher
 	joining   *punch.RoomInvite
 	advertise string
@@ -95,6 +97,10 @@ func runRoom(args []string) error {
 	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining,
 		timeout: *timeout, advertise: *advertise, standalone: *standalone}
 
+	// The group is the layer that knows what a line is and what to call
+	// somebody; the room underneath only carries bytes between members.
+	open.group = chat.In(party)
+
 	if *discover {
 		meeting, err := punch.NewRendezvous(mux, secret, conn.LocalAddr().(*net.UDPAddr).Port)
 		if err != nil {
@@ -122,7 +128,8 @@ func runRoom(args []string) error {
 // runPlain is the line based front end: what a pipe, a CI job or a terminal
 // that refuses raw mode gets.
 func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
-	r.room.Observe(r)
+	r.group.OnLine(r.said)
+	r.group.OnTyping(func(chat.Speaker, bool) {})
 	go r.announce(ctx, r.advertise, nil)
 	go r.meet(ctx, func(line string) { fmt.Println("--", line) })
 
@@ -142,7 +149,7 @@ func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
 		r.mu.Lock()
 		r.joined = true
 		r.mu.Unlock()
-		fmt.Printf("you are in. You are %s\n", r.room.Me().Name)
+		fmt.Printf("you are in. You are %s\n", r.group.Me().Name)
 	} else {
 		r.mu.Lock()
 		r.joined = true
@@ -299,6 +306,16 @@ func (r *room) offerWayBack(ctx context.Context, chat *tui.Chat) {
 // hiccup is not a departure. Only the first of those is gone for the purpose of
 // closing the room; the second still counts, so a room does not close itself
 // over a bad thirty seconds.
+func stillHereNamed(members []chat.Speaker) int {
+	count := 0
+	for _, member := range members {
+		if !member.Health.Departed {
+			count++
+		}
+	}
+	return count
+}
+
 func stillHere(members []punch.Member) int {
 	count := 0
 	for _, member := range members {
@@ -478,11 +495,12 @@ func (r *room) report() {
 
 // Message and Typing satisfy the room observer. Every line names who said it:
 // a conversation with more than two people has no default speaker.
-func (r *room) Message(from punch.Member, payload string) {
-	fmt.Printf("<%s> %s\n", from.Name, text.Safe(payload))
+// said prints one line in plain mode. The text arrived already checked by the
+// chat layer; sanitising here as well is what keeps this the only place that
+// has to be trusted with a terminal.
+func (r *room) said(from chat.Speaker, line string) {
+	fmt.Printf("<%s> %s\n", from.Name, text.Safe(line))
 }
-
-func (r *room) Typing(punch.Member, bool) {}
 
 // watchMembers reports arrivals and departures by diffing the roster, which is
 // polled like everything else about a path.
@@ -496,9 +514,10 @@ func (r *room) watchMembers(ctx context.Context, quit context.CancelFunc) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			speakers := r.group.Speakers()
 			members := r.room.Members()
 			present := map[punch.PublicKey]string{}
-			for _, member := range members {
+			for _, member := range speakers {
 				present[member.Key] = member.Name
 				if _, seen := known[member.Key]; !seen {
 					fmt.Printf("-- %s joined\n", member.Name)
@@ -553,7 +572,7 @@ func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
 			r.show(r.endpoint, nil)
 		case r.pastePlain(ctx, line):
 		case line != "":
-			r.room.Broadcast(line)
+			r.group.Say(line)
 		}
 	}
 }
@@ -574,8 +593,8 @@ func (r *room) pastePlain(ctx context.Context, line string) bool {
 }
 
 func (r *room) listMembers() {
-	members := r.room.Members()
-	fmt.Printf("-- you are %s, with %d other(s):\n", r.room.Me().Name, len(members))
+	members := r.group.Speakers()
+	fmt.Printf("-- you are %s, with %d other(s):\n", r.group.Me().Name, len(members))
 	for _, member := range members {
 		fmt.Printf("   %-22s %s %s\n", member.Name, member.Health.Link, member.Addr)
 	}

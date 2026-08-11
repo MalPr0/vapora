@@ -15,13 +15,13 @@ type roomLog struct {
 	lines []string
 }
 
-func (l *roomLog) Message(from Member, payload string) {
+// A room carries bytes and names nobody, so the log keys on the key itself.
+// What to call somebody is the caller's problem, which is the point.
+func (l *roomLog) Data(from Member, payload []byte) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.lines = append(l.lines, from.Name+": "+payload)
+	l.lines = append(l.lines, from.Key.String()+": "+string(payload))
 }
-
-func (l *roomLog) Typing(Member, bool) {}
 
 func (l *roomLog) all() []string {
 	l.mu.Lock()
@@ -106,10 +106,10 @@ func TestTwoJoinAndTalk(t *testing.T) {
 
 	waitUntil(t, "the host never saw the guest", func() bool { return len(host.room.Members()) == 1 })
 
-	guest.room.Broadcast("hola")
+	guest.room.Broadcast([]byte("hola"))
 	waitUntil(t, "the line never arrived", func() bool { return host.log.has("hola") })
 
-	host.room.Broadcast("chau")
+	host.room.Broadcast([]byte("chau"))
 	waitUntil(t, "the answer never arrived", func() bool { return guest.log.has("chau") })
 }
 
@@ -146,12 +146,12 @@ func TestThreeMeetAndTalkDirectly(t *testing.T) {
 	alice.stop()
 	time.Sleep(200 * time.Millisecond)
 
-	bob.room.Broadcast("carol, me escuchas?")
+	bob.room.Broadcast([]byte("carol, me escuchas?"))
 	waitUntil(t, "carol never heard bob once the introducer left", func() bool {
 		return carol.log.has("me escuchas")
 	})
 
-	carol.room.Broadcast("fuerte y claro")
+	carol.room.Broadcast([]byte("fuerte y claro"))
 	waitUntil(t, "bob never heard carol back", func() bool { return bob.log.has("fuerte y claro") })
 }
 
@@ -176,7 +176,7 @@ func TestAGuestCanInvite(t *testing.T) {
 	}
 
 	waitUntil(t, "alice never learned about carol", func() bool { return len(alice.room.Members()) == 2 })
-	carol.room.Broadcast("hola alice")
+	carol.room.Broadcast([]byte("hola alice"))
 	waitUntil(t, "alice never heard carol", func() bool { return alice.log.has("hola alice") })
 }
 
@@ -193,13 +193,13 @@ func TestEveryoneAgreesOnNames(t *testing.T) {
 	}
 	waitUntil(t, "the room never converged", func() bool { return len(alice.room.Members()) == 1 })
 
-	if alice.room.Me().Name != bob.room.Members()[0].Name {
+	if alice.room.Me().Key != bob.room.Members()[0].Key {
 		t.Fatalf("alice calls herself %q, bob calls her %q",
-			alice.room.Me().Name, bob.room.Members()[0].Name)
+			alice.room.Me().Key, bob.room.Members()[0].Key)
 	}
-	if bob.room.Me().Name != alice.room.Members()[0].Name {
+	if bob.room.Me().Key != alice.room.Members()[0].Key {
 		t.Fatalf("bob calls himself %q, alice calls him %q",
-			bob.room.Me().Name, alice.room.Members()[0].Name)
+			bob.room.Me().Key, alice.room.Members()[0].Key)
 	}
 }
 

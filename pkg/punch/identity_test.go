@@ -52,13 +52,13 @@ func TestPairKeysAreSymmetricAndCrossed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	sealed := aliceCodec.Seal(kindMessage, "hola")
+	sealed := aliceCodec.Seal(kindData, "hola")
 	frame, err := bobCodec.Open(sealed)
 	if err != nil || frame.Payload != "hola" {
 		t.Fatalf("got %+v err %v", frame, err)
 	}
 
-	back := bobCodec.Seal(kindMessage, "chau")
+	back := bobCodec.Seal(kindData, "chau")
 	if frame, err := aliceCodec.Open(back); err != nil || frame.Payload != "chau" {
 		t.Fatalf("got %+v err %v", frame, err)
 	}
@@ -97,7 +97,7 @@ func TestAThirdMemberCannotOpenAPairChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	sealed := aliceCodec.Seal(kindMessage, "solo para bob")
+	sealed := aliceCodec.Seal(kindData, "solo para bob")
 
 	// Carol tries every channel it can build with what it has.
 	for _, peer := range []PublicKey{alice.Public(), bob.Public()} {
@@ -119,7 +119,7 @@ func TestAThirdMemberCannotOpenAPairChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := bobCodec.Open(forged.Seal(kindMessage, "soy alice")); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := bobCodec.Open(forged.Seal(kindData, "soy alice")); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("a third member forged into a pair channel: %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestPairKeysDifferBetweenRooms(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, err := inSecond.Open(inFirst.Seal(kindMessage, "hola")); !errors.Is(err, ErrUnauthenticated) {
+	if _, err := inSecond.Open(inFirst.Seal(kindData, "hola")); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("a channel from one room opened in another: %v", err)
 	}
 }
@@ -159,92 +159,3 @@ func TestPairCodecRejectsNonsense(t *testing.T) {
 
 // Every member computes the same name for every member, and a room of eight
 // should not have two rows saying the same thing.
-func TestNicknamesFromKeys(t *testing.T) {
-	key := identity(t).Public()
-	if key.Nickname() != key.Nickname() {
-		t.Fatal("a key gave two different names")
-	}
-
-	words := strings.Fields(key.Nickname())
-	if len(words) != 3 {
-		t.Fatalf("got %q", key.Nickname())
-	}
-	inPool := func(pool []string, word string) bool {
-		for _, candidate := range pool {
-			if candidate == word {
-				return true
-			}
-		}
-		return false
-	}
-	if !inPool(adjectives, words[0]) || !inPool(colours, words[1]) || !inPool(animals, words[2]) {
-		t.Fatalf("%q is not built from the pools", key.Nickname())
-	}
-	if key.Colour() != words[1] {
-		t.Fatalf("Colour said %q for %q", key.Colour(), key.Nickname())
-	}
-}
-
-// A name only has to be long enough to tell apart who is actually present, so
-// a small room gets bare animals and the extra words appear where they earn
-// their space.
-func TestShortNamesGrowOnlyWhenTheyHaveTo(t *testing.T) {
-	var keys []PublicKey
-	for i := 0; i < MaxMembers; i++ {
-		keys = append(keys, identity(t).Public())
-	}
-
-	names := ShortNames(keys)
-	if len(names) != len(keys) {
-		t.Fatalf("named %d of %d", len(names), len(keys))
-	}
-
-	seen := map[string]PublicKey{}
-	for key, name := range names {
-		if other, clash := seen[name]; clash && other != key {
-			t.Fatalf("%q named two members", name)
-		}
-		seen[name] = key
-		if words := len(strings.Fields(name)); words < 1 || words > 3 {
-			t.Fatalf("%q has %d words", name, words)
-		}
-	}
-}
-
-// Two keys that share an animal have to be told apart, and the one word that
-// does it is the one that gets added.
-func TestShortNamesDisambiguateACollision(t *testing.T) {
-	var first, second PublicKey
-	for attempt := 0; attempt < 20000; attempt++ {
-		candidate := identity(t).Public()
-		if first.isZero() {
-			first = candidate
-			continue
-		}
-		if candidate.name(1) == first.name(1) && candidate != first {
-			second = candidate
-			break
-		}
-	}
-	if second.isZero() {
-		t.Skip("no animal collision came up in twenty thousand keys")
-	}
-
-	names := ShortNames([]PublicKey{first, second})
-	if names[first] == names[second] {
-		t.Fatalf("both were named %q", names[first])
-	}
-	for _, key := range []PublicKey{first, second} {
-		if len(strings.Fields(names[key])) < 2 {
-			t.Fatalf("a collision was left as the bare animal %q", names[key])
-		}
-	}
-}
-
-// A lone member does not need qualifying.
-func TestShortNamesStayShortAlone(t *testing.T) {
-	key := identity(t).Public()
-	if got := ShortNames([]PublicKey{key})[key]; strings.Contains(got, " ") {
-		t.Fatalf("a room of one got %q", got)
-	}
-}

@@ -3,6 +3,7 @@ package punch
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"io"
 	"net"
 	"strings"
@@ -12,11 +13,11 @@ import (
 )
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
-	kind, payload, err := decode(encode(kindMessage, "hola & chau"))
+	kind, payload, err := decode(encode(kindData, "hola & chau"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if kind != kindMessage || payload != "hola & chau" {
+	if kind != kindData || payload != "hola & chau" {
 		t.Fatalf("got kind %d payload %q", kind, payload)
 	}
 
@@ -97,7 +98,11 @@ func TestOpenTimesOutWithoutPeer(t *testing.T) {
 	}
 }
 
-func TestOpenAndExchangeMessages(t *testing.T) {
+// The default observer prints hex, not the bytes themselves: a payload from the
+// network is not text and must never reach a terminal unexamined. Turning bytes
+// back into something readable is the caller's job, which is the whole point of
+// the split.
+func TestOpenAndExchangePayloads(t *testing.T) {
 	left, right := listen(t), listen(t)
 	defer left.Close()
 	defer right.Close()
@@ -114,11 +119,11 @@ func TestOpenAndExchangeMessages(t *testing.T) {
 	go leftSession.Run(ctx)
 	go rightSession.Run(ctx)
 
-	leftSession.SendMessage("ping")
-	rightSession.SendMessage("pong")
+	leftSession.Send([]byte("ping"))
+	rightSession.Send([]byte("pong"))
 
-	waitFor(t, rightOutput, "<peer> ping")
-	waitFor(t, leftOutput, "<peer> pong")
+	waitFor(t, rightOutput, hex.EncodeToString([]byte("ping")))
+	waitFor(t, leftOutput, hex.EncodeToString([]byte("pong")))
 }
 
 // The waiting side knows nothing about the peer until its first packet lands,

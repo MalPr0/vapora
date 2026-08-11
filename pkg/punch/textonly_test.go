@@ -3,95 +3,37 @@ package punch
 import (
 	"context"
 	"net"
-	"strings"
 	"testing"
 	"time"
 )
-
-func pair(t *testing.T) (*Session, *Session, *recordingObserver, context.CancelFunc) {
-	t.Helper()
-
-	left, right := listen(t), listen(t)
-	t.Cleanup(func() { left.Close(); right.Close() })
-
-	observer := &recordingObserver{typing: make(chan bool, 8), messages: make(chan string, 8)}
-	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
-	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
-	rightSession.Observe(observer)
-
-	leftSession.SetPeer(localAddr(t, right))
-	rightSession.SetPeer(localAddr(t, left))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	openBoth(t, ctx, leftSession, rightSession)
-	go rightSession.Run(ctx)
-
-	return leftSession, rightSession, observer, cancel
-}
-
-func expect(t *testing.T, observer *recordingObserver, want string) {
-	t.Helper()
-	select {
-	case got := <-observer.messages:
-		if got != want {
-			t.Fatalf("got %q, want %q", got, want)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatalf("%q never arrived", want)
-	}
-}
-
-// Whatever the caller hands over, what leaves is text.
-func TestSendingSanitisesTheLine(t *testing.T) {
-	left, _, observer, cancel := pair(t)
-	defer cancel()
-
-	left.SendMessage("hola\x1b[2Jchau")
-	expect(t, observer, "hola[2Jchau")
-
-	left.SendMessage(strings.Repeat("x", 5000))
-	select {
-	case got := <-observer.messages:
-		if len([]rune(got)) > 1100 {
-			t.Fatalf("a %d rune line crossed the channel", len([]rune(got)))
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the long line never arrived")
-	}
-}
-
-// A frame carrying something other than text is not this program on the other
-// end, so it is dropped rather than cleaned up and shown.
-func TestNonTextFramesAreDropped(t *testing.T) {
-	left, _, observer, cancel := pair(t)
-	defer cancel()
-
-	// Bypasses SendMessage on purpose: this is what a peer that is not this
-	// program would put on the wire.
-	left.send(kindMessage, "hola\x1b[2Jchau")
-	left.send(kindMessage, string([]byte{0xFF, 0xFE}))
-	left.send(kindMessage, "hola")
-
-	// Only the last one is text, and it must not be preceded by the others.
-	expect(t, observer, "hola")
-}
 
 // Quitting on purpose has to be distinguishable from a network that went quiet,
 // or the other side waits out the whole silence budget to learn something that
 // was already decided.
 func TestGoodbyeIsImmediate(t *testing.T) {
-	left, right, _, cancel := pair(t)
-	defer cancel()
+	left, right := listen(t), listen(t)
+	defer left.Close()
+	defer right.Close()
 
-	if health := right.Health(); health.Link != LinkAlive || health.Departed {
+	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
+	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
+	leftSession.SetPeer(localAddr(t, right))
+	rightSession.SetPeer(localAddr(t, left))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	openBoth(t, ctx, leftSession, rightSession)
+	go rightSession.Run(ctx)
+
+	if health := rightSession.Health(); health.Link != LinkAlive || health.Departed {
 		t.Fatalf("a live path reported %+v", health)
 	}
 
-	left.Goodbye()
+	leftSession.Goodbye()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if health := right.Health(); health.Departed {
+		if health := rightSession.Health(); health.Departed {
 			if health.Link != LinkLost {
 				t.Fatalf("a departed peer reported %s", health.Link)
 			}

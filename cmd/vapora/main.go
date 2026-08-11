@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MalPr0/vapora/internal/chat"
+	"github.com/MalPr0/vapora/internal/tcpchat"
 	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/upnp"
 )
@@ -171,7 +171,7 @@ func runServe(args []string) error {
 		return err
 	}
 
-	server := chat.NewServer(os.Stdout, secret)
+	server := tcpchat.NewServer(os.Stdout, secret)
 	listener, err := server.Listen(ctx, fmt.Sprintf(":%d", opts.port))
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func runConnect(args []string) error {
 	}
 
 	fmt.Printf("connecting to %s\n", invite.Endpoint)
-	return chat.Dial(ctx, invite.Endpoint.String(), invite.Secret, os.Stdin, os.Stdout)
+	return tcpchat.Dial(ctx, invite.Endpoint.String(), invite.Secret, os.Stdin, os.Stdout)
 }
 
 func parseServeOptions(args []string) (options, error) {

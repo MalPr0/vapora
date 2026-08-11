@@ -100,7 +100,7 @@ func readStdin(ctx context.Context, open *channel, quit context.CancelFunc) {
 		}
 
 		if open.session.Peer() != nil {
-			open.session.SendMessage(line)
+			open.talk.Say(line)
 			continue
 		}
 

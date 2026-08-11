@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MalPr0/vapora/pkg/names"
 	"github.com/MalPr0/vapora/pkg/punch"
 )
 
@@ -17,7 +18,7 @@ func TestEveryNamedColourHasAnInk(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cannot generate an identity: %v", err)
 		}
-		seen[identity.Public().Colour()] = true
+		seen[names.Colour(identity.Public())] = true
 	}
 
 	if len(seen) < 60 {

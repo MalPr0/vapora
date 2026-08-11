@@ -13,20 +13,27 @@ import (
 var ErrRoomFull = errors.New("punch: the room is full")
 
 // Member is one participant as the room sees them.
+//
+// There is no name here on purpose. What to call somebody is a question for
+// whoever is showing them to a person, and an application with its own idea of
+// identity should not have to work around this one.
 type Member struct {
 	Key    PublicKey
-	Name   string
 	Addr   *net.UDPAddr
 	Health Health
 }
 
-// RoomObserver receives what happens in a room. Unlike a session's, every
-// callback names who it came from: a conversation with more than two people in
-// it has no default speaker.
+// RoomObserver receives what happens in a room. Unlike a session's, it names
+// who it came from: with more than two people there is no default sender.
 type RoomObserver interface {
-	Message(from Member, payload string)
-	Typing(from Member, active bool)
+	// Data is a payload one member sent, exactly as they sent it.
+	Data(from Member, payload []byte)
 }
+
+// RoomObserverFunc adapts a function.
+type RoomObserverFunc func(from Member, payload []byte)
+
+func (f RoomObserverFunc) Data(from Member, payload []byte) { f(from, payload) }
 
 type roomMember struct {
 	key        PublicKey
@@ -139,18 +146,10 @@ func (r *Room) Members() []Member {
 }
 
 func (r *Room) snapshot() []Member {
-	keys := make([]PublicKey, 0, len(r.members)+1)
-	keys = append(keys, r.identity.Public())
-	for key := range r.members {
-		keys = append(keys, key)
-	}
-	names := ShortNames(keys)
-
 	members := make([]Member, 0, len(r.members))
 	for key, entry := range r.members {
 		members = append(members, Member{
 			Key:    key,
-			Name:   names[key],
 			Addr:   entry.addr(),
 			Health: entry.session.Health(),
 		})
@@ -158,32 +157,29 @@ func (r *Room) snapshot() []Member {
 	return members
 }
 
-// Me is this participant, named the same way everyone else names them.
+// Me is this participant.
 func (r *Room) Me() Member {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	keys := make([]PublicKey, 0, len(r.members)+1)
-	keys = append(keys, r.identity.Public())
-	for key := range r.members {
-		keys = append(keys, key)
-	}
-	return Member{Key: r.identity.Public(), Name: ShortNames(keys)[r.identity.Public()]}
+	return Member{Key: r.identity.Public()}
 }
 
-// Broadcast says one line to everyone. There is no relaying: it goes out once
-// per pair channel, which is what keeps any one member from being able to
-// rewrite what another said.
-func (r *Room) Broadcast(line string) {
+// Broadcast sends the same payload to everyone. There is no relaying: it goes
+// out once per pair channel, sealed separately for each, which is what keeps
+// any one member from being able to rewrite what another said.
+func (r *Room) Broadcast(payload []byte) {
 	for _, entry := range r.each() {
-		entry.session.SendMessage(line)
+		entry.session.Send(payload)
 	}
 }
 
-func (r *Room) SetTyping(active bool) {
-	for _, entry := range r.each() {
-		entry.session.SetTyping(active)
+// SendTo says something to one member and to nobody else. The other members
+// cannot read it: they do not have that pair's key.
+func (r *Room) SendTo(key PublicKey, payload []byte) bool {
+	member, known := r.member(key)
+	if !known {
+		return false
 	}
+	member.session.Send(payload)
+	return true
 }
 
 func (r *Room) Goodbye() {
@@ -324,7 +320,7 @@ func (r *Room) describe(key PublicKey) Member {
 			return member
 		}
 	}
-	return Member{Key: key, Name: key.Nickname()}
+	return Member{Key: key}
 }
 
 // memberObserver puts the sender back on what a session reports, which a
@@ -334,15 +330,9 @@ type memberObserver struct {
 	key  PublicKey
 }
 
-func (o memberObserver) Message(payload string) {
+func (o memberObserver) Data(payload []byte) {
 	if observer := o.room.events(); observer != nil {
-		observer.Message(o.room.describe(o.key), payload)
-	}
-}
-
-func (o memberObserver) Typing(active bool) {
-	if observer := o.room.events(); observer != nil {
-		observer.Typing(o.room.describe(o.key), active)
+		observer.Data(o.room.describe(o.key), payload)
 	}
 }
 

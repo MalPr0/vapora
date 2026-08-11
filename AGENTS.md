@@ -40,7 +40,10 @@ not the product and carries no compatibility promises.
 | `pkg/text` | Sanitiser for anything from the network headed to a terminal |
 | `internal/tui` | The pixel art chat: screen, sprites, key decoding, raw mode |
 | `pkg/dht` | Bencode and a mainline DHT client: announce and lookup, no serving |
-| `internal/chat` | Demo TCP chat for the UPnP path |
+| `pkg/chat` | A conversation built on the transport: lines, typing, who is speaking |
+| `pkg/names` | Public key to a name a person can say. Presentation, not identity |
+| `internal/tcpchat` | Demo TCP chat for the UPnP path, from before any of this |
+| `examples/filedrop` | Proof the transport carries something that is not a chat |
 
 `scripts/mesh-check.exp` drives three real rooms through pseudo-terminals with
 `expect`: keyboard in, screen out, chained invites. It is the only check that
@@ -49,6 +52,28 @@ so it is not part of `go test`.
 
 `pkg/` is the shared contract: high coverage is expected there, and a change to
 a signature is a change to the contract.
+
+## The two layers
+
+`pkg/punch` moves bytes and has no idea what they mean. `pkg/chat` decides they
+are a conversation. Nothing below the second knows about the first's opinions,
+and that separation is load-bearing rather than tidy:
+
+- **The transport's only application surface is `kindData`.** Frame kinds below
+  0x40 are the transport's own; everything a caller sends is opaque payload
+  under one kind. A caller that needs several kinds of its own puts a tag inside
+  the payload, so the two numbering spaces can never collide.
+- **`Session.Send` and `Room.Broadcast` take bytes, and `Observer.Data` returns
+  them unexamined.** Deciding what may cross — that it is text, that it is short
+  enough, that a terminal can be trusted with it — belongs to whoever knows what
+  the bytes mean. `pkg/chat` does that; `pkg/punch` must not.
+- **A `punch.Member` has no name.** What to call somebody is presentation, and
+  an application with its own idea of identity should not have to work around
+  this one. `pkg/names` derives one from a key for anybody who wants it.
+- **`examples/filedrop` is the test of all of the above.** It moves a file with
+  no chat, no nicknames and no terminal, and nothing in `pkg/punch` changed to
+  allow it. If a future change makes that example awkward, the layering has
+  regressed.
 
 ## Invariants worth knowing before editing
 

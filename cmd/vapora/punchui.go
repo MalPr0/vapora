@@ -34,21 +34,22 @@ func runPunchUI(ctx context.Context, open *channel) error {
 	me := open.nicknames.For(open.role)
 	peer := open.nicknames.Other(open.role)
 
-	chat := tui.NewChat(terminal, me)
-	chat.OnSend(open.session.SendMessage)
-	chat.OnTyping(open.session.SetTyping)
-	chat.OnCommand(func(line string) bool {
+	view := tui.NewChat(terminal, me)
+	view.OnSend(open.talk.Say)
+	view.OnTyping(open.talk.SetTyping)
+	view.OnCommand(func(line string) bool {
 		if !isExit(line) {
 			return false
 		}
 		leave(open.session)
-		chat.Quit()
+		view.Quit()
 		return true
 	})
 	// A session only ever has one peer, so it reports without saying who; the
 	// view names every line because a room has no default speaker. Putting the
 	// name back here is what lets both use the same view.
-	open.session.Observe(namedObserver{chat: chat, name: peer})
+	open.talk.OnLine(func(line string) { view.Message(peer, line) })
+	open.talk.OnTyping(func(active bool) { view.Typing(peer, active) })
 
 	uiCtx, stopUI := context.WithCancel(ctx)
 	defer stopUI()
@@ -56,18 +57,18 @@ func runPunchUI(ctx context.Context, open *channel) error {
 	// The UI owns the terminal from here on, so everything the connection has
 	// to say goes through it and nothing writes to stdout directly.
 	done := make(chan error, 1)
-	go func() { done <- chat.Run(uiCtx) }()
+	go func() { done <- view.Run(uiCtx) }()
 
 	go func() {
-		if err := connect(uiCtx, open, chat); err != nil {
+		if err := connect(uiCtx, open, view); err != nil {
 			open.note(err.Error())
-			chat.Closed(err.Error())
+			view.Closed(err.Error())
 			return
 		}
-		chat.Connected(me)
-		go pushHealth(uiCtx, open, chat)
+		view.Connected(me)
+		go pushHealth(uiCtx, open, view)
 		if err := open.session.Run(uiCtx); err != nil {
-			chat.Closed(err.Error())
+			view.Closed(err.Error())
 		}
 	}()
 
@@ -76,9 +77,9 @@ func runPunchUI(ctx context.Context, open *channel) error {
 
 // pushHealth keeps the link indicator current and posts a line when the verdict
 // changes, so a path that goes quiet says so instead of just looking idle.
-func pushHealth(ctx context.Context, open *channel, chat *tui.Chat) {
+func pushHealth(ctx context.Context, open *channel, view *tui.Chat) {
 	go watchPath(ctx, open, func(recovery Recovery) {
-		chat.System(recoveryMessage(recovery))
+		view.System(recoveryMessage(recovery))
 	})
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -90,7 +91,7 @@ func pushHealth(ctx context.Context, open *channel, chat *tui.Chat) {
 			return
 		case <-ticker.C:
 			health := open.session.Health()
-			chat.SetMembers([]tui.Participant{{
+			view.SetMembers([]tui.Participant{{
 				Name:    open.nicknames.Other(open.role),
 				Link:    linkState(health.Link),
 				RTT:     health.RTT,
@@ -113,46 +114,46 @@ func linkState(link punch.Link) tui.LinkState {
 
 // connect drives the loading screen through the handshake and hands the invite
 // to the UI as soon as there is one to show.
-func connect(ctx context.Context, open *channel, chat *tui.Chat) error {
-	chat.SetStatus("looking up your public endpoint", 0.05)
+func connect(ctx context.Context, open *channel, view *tui.Chat) error {
+	view.SetStatus("looking up your public endpoint", 0.05)
 
 	open.watcher.OnChange(func(_, current *net.UDPAddr) {
-		chat.SetInvite(open.inviteFor(current))
-		chat.System(movedMessage(open, current))
+		view.SetInvite(open.inviteFor(current))
+		view.System(movedMessage(open, current))
 	})
-	go trackProgress(ctx, open, chat)
+	go trackProgress(ctx, open, view)
 
 	err := open.waitForPath(ctx, func(endpoint *net.UDPAddr) {
 		if open.role == punch.RoleJoiner {
 			if open.established.Load() {
 				return
 			}
-			chat.SetStatus("punching towards your friend", 0.2)
+			view.SetStatus("punching towards your friend", 0.2)
 			if endpoint != nil {
-				chat.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
+				view.SetInvite("if it stalls, send back: " + open.inviteFor(endpoint))
 			}
 			return
 		}
 		if endpoint == nil {
-			chat.SetStatus("no STUN server answered, there is no address to share", 0.2)
-			chat.SetInvite("something here is blocking STUN. Try: vapora nat")
+			view.SetStatus("no STUN server answered, there is no address to share", 0.2)
+			view.SetInvite("something here is blocking STUN. Try: vapora nat")
 			return
 		}
-		chat.SetStatus("waiting for your friend to join", 0.2)
-		chat.SetInvite(open.inviteFor(endpoint))
+		view.SetStatus("waiting for your friend to join", 0.2)
+		view.SetInvite(open.inviteFor(endpoint))
 	})
 	if err != nil {
 		return err
 	}
 
-	chat.SetStatus("connected", 1)
+	view.SetStatus("connected", 1)
 	return nil
 }
 
 // trackProgress advances the loading meter with elapsed time. There is nothing
 // better to measure: a punch either lands or it does not, so the bar shows how
 // much of the budget is gone rather than pretending to know more.
-func trackProgress(ctx context.Context, open *channel, chat *tui.Chat) {
+func trackProgress(ctx context.Context, open *channel, view *tui.Chat) {
 	started := time.Now()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -164,20 +165,11 @@ func trackProgress(ctx context.Context, open *channel, chat *tui.Chat) {
 			return
 		case <-ticker.C:
 			if !announced && open.session.Peer() != nil && open.role == punch.RoleInviter {
-				chat.SetStatus("your friend arrived, opening the path", 0.85)
+				view.SetStatus("your friend arrived, opening the path", 0.85)
 				announced = true
 			}
 			elapsed := time.Since(started).Seconds() / open.timeout.Seconds()
-			chat.SetProgress(0.2 + 0.6*elapsed)
+			view.SetProgress(0.2 + 0.6*elapsed)
 		}
 	}
 }
-
-// namedObserver adapts a two way session to a view that names every speaker.
-type namedObserver struct {
-	chat *tui.Chat
-	name string
-}
-
-func (o namedObserver) Message(payload string) { o.chat.Message(o.name, payload) }
-func (o namedObserver) Typing(active bool)     { o.chat.Typing(o.name, active) }

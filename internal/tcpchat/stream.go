@@ -1,7 +1,7 @@
 // Package chat is the demo that proves a UPnP port mapping carries traffic.
 // It is not the product, but it is reachable from the internet, so it is
 // authenticated and encrypted with the same session key the punch channel uses.
-package chat
+package tcpchat
 
 import (
 	"bufio"

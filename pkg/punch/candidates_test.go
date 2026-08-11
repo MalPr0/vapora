@@ -138,7 +138,7 @@ func TestALivePathIsNotMoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stranger.WriteToUDP(codec.Seal(kindMessage, "movete"), host.addr); err != nil {
+	if _, err := stranger.WriteToUDP(codec.Seal(kindData, "movete"), host.addr); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(500 * time.Millisecond)

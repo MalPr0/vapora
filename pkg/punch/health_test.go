@@ -13,7 +13,7 @@ func TestPingAndPongNeverReachTheObserver(t *testing.T) {
 	defer left.Close()
 	defer right.Close()
 
-	observer := &recordingObserver{typing: make(chan bool, 8), messages: make(chan string, 8)}
+	observer := newRecorder(8)
 	leftSession := wired(t, left, plainCodec{}, &syncBuffer{})
 	rightSession := wired(t, right, plainCodec{}, &syncBuffer{})
 	rightSession.Observe(observer)
@@ -42,7 +42,7 @@ func TestPingAndPongNeverReachTheObserver(t *testing.T) {
 		t.Fatal("no round trip was ever measured")
 	}
 	select {
-	case payload := <-observer.messages:
+	case payload := <-observer.payloads:
 		t.Fatalf("a probe surfaced as a message: %q", payload)
 	default:
 	}
@@ -129,7 +129,7 @@ func TestAnyFrameRefreshesLiveness(t *testing.T) {
 		t.Fatal("the setup did not take")
 	}
 
-	rightSession.SendMessage("hola")
+	rightSession.Send([]byte("hola"))
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

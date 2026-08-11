@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MalPr0/vapora/internal/tui"
+	"github.com/MalPr0/vapora/pkg/chat"
 	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/stun"
 )
@@ -34,10 +35,11 @@ type channel struct {
 	conn      *net.UDPConn
 	mux       *punch.Mux
 	session   *punch.Session
+	talk      *chat.Conversation
 	watcher   *stun.Watcher
 	secret    punch.Secret
 	role      punch.Role
-	nicknames punch.Nicknames
+	nicknames chat.Pair
 	peer      *net.UDPAddr
 	timeout   time.Duration
 	keepalive time.Duration
@@ -88,11 +90,15 @@ func runPunch(args []string) error {
 		watcher:   stun.NewWatcher(stun.DefaultServers, *keepalive),
 		secret:    secret,
 		role:      role,
-		nicknames: secret.Nicknames(),
+		nicknames: chat.NamePair(secret),
 		peer:      peer,
 		timeout:   *timeout,
 		keepalive: *keepalive,
 	}
+	// The conversation is the layer that knows what a line is; the session
+	// underneath only knows it is moving bytes.
+	open.talk = chat.Over(open.session)
+
 	if role == punch.RoleJoiner {
 		open.session.SetPeer(peer)
 	}

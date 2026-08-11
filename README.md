@@ -274,6 +274,36 @@ Honest limitations, not fine print.
 
 ---
 
+## Use it for something else
+
+The chat is one thing built on the channel, not the point of it. The transport
+is a separate layer with no idea what a conversation is: it opens an encrypted
+path through two routers, keeps a mesh alive, and moves **bytes**.
+
+```go
+session := punch.NewSession(mux, codec, nil)
+session.Observe(punch.ObserverFunc(func(payload []byte) {
+    // whatever you put in is what you get out
+}))
+session.Send([]byte{...})
+```
+
+| Package | What it gives you |
+|---|---|
+| `pkg/punch` | The path, the encryption, the mesh. Bytes in, bytes out. |
+| `pkg/stun` | Your public address, and a classification of your NAT. |
+| `pkg/upnp`, `pkg/pcp` | Asking a router to open a door, in three protocols. |
+| `pkg/dht` | Announce and find an address on the BitTorrent DHT. |
+| `pkg/diag` | Whether two networks can reach each other, and what to do. |
+| `pkg/names` | A key turned into a name a person can say out loud. |
+| `pkg/chat` | Lines, typing and speakers — the layer this program's UI uses. |
+
+[`examples/filedrop`](examples/filedrop) is the proof it is a real separation:
+it moves a file between two machines with no chat, no nicknames and no terminal,
+and nothing in the transport had to change to allow it.
+
+---
+
 ## Build it yourself
 
 The shortest answer to "should I trust this binary":

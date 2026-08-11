@@ -26,7 +26,7 @@ func TestPeerIsFollowedToANewAddress(t *testing.T) {
 	defer oldAddr.Close()
 	defer newAddr.Close()
 
-	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	observer := newRecorder(4)
 	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, oldAddr))
@@ -38,10 +38,11 @@ func TestPeerIsFollowedToANewAddress(t *testing.T) {
 	staleOut(t, session)
 
 	// The peer reappears from somewhere else entirely.
-	_, _ = newAddr.WriteToUDP(encode(kindMessage, "me mude"), localAddr(t, home))
+	_, _ = newAddr.WriteToUDP(encode(kindData, "me mude"), localAddr(t, home))
 
 	select {
-	case got := <-observer.messages:
+	case payload := <-observer.payloads:
+		got := string(payload)
 		if got != "me mude" {
 			t.Fatalf("got %q", got)
 		}
@@ -65,7 +66,7 @@ func TestAHealthyPathDoesNotFollow(t *testing.T) {
 	defer peer.Close()
 	defer stranger.Close()
 
-	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	observer := newRecorder(4)
 	session := wired(t, home, plainCodec{}, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, peer))
@@ -74,10 +75,11 @@ func TestAHealthyPathDoesNotFollow(t *testing.T) {
 	defer cancel()
 	go session.Run(ctx)
 
-	_, _ = stranger.WriteToUDP(encode(kindMessage, "desde otro lado"), localAddr(t, home))
+	_, _ = stranger.WriteToUDP(encode(kindData, "desde otro lado"), localAddr(t, home))
 
 	select {
-	case got := <-observer.messages:
+	case payload := <-observer.payloads:
+		got := string(payload)
 		t.Fatalf("a live path followed a second address: %q", got)
 	case <-time.After(500 * time.Millisecond):
 	}
@@ -112,7 +114,7 @@ func TestAnUnauthenticatedFrameNeverMoves(t *testing.T) {
 	staleOut(t, session)
 
 	for i := 0; i < 20; i++ {
-		_, _ = attacker.WriteToUDP(encode(kindMessage, "dejame entrar"), localAddr(t, home))
+		_, _ = attacker.WriteToUDP(encode(kindData, "dejame entrar"), localAddr(t, home))
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -219,7 +221,7 @@ func TestAThirdHolderOfTheSecretCannotStealTheSession(t *testing.T) {
 		t.Fatalf("cannot build the codec: %v", err)
 	}
 
-	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	observer := newRecorder(4)
 	session := wired(t, home, homeCodec, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, peer))
@@ -229,9 +231,10 @@ func TestAThirdHolderOfTheSecretCannotStealTheSession(t *testing.T) {
 	go session.Run(ctx)
 
 	// The peer speaks first, which is what pins it to the session.
-	_, _ = peer.WriteToUDP(peerCodec.Seal(kindMessage, "soy el par"), localAddr(t, home))
+	_, _ = peer.WriteToUDP(peerCodec.Seal(kindData, "soy el par"), localAddr(t, home))
 	select {
-	case got := <-observer.messages:
+	case payload := <-observer.payloads:
+		got := string(payload)
 		if got != "soy el par" {
 			t.Fatalf("got %q", got)
 		}
@@ -242,12 +245,13 @@ func TestAThirdHolderOfTheSecretCannotStealTheSession(t *testing.T) {
 	staleOut(t, session)
 
 	for i := 0; i < 10; i++ {
-		_, _ = third.WriteToUDP(thirdCodec.Seal(kindMessage, "soy yo ahora"), localAddr(t, home))
+		_, _ = third.WriteToUDP(thirdCodec.Seal(kindData, "soy yo ahora"), localAddr(t, home))
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	select {
-	case got := <-observer.messages:
+	case payload := <-observer.payloads:
+		got := string(payload)
 		t.Fatalf("a third holder of the invite was heard: %q", got)
 	case <-time.After(300 * time.Millisecond):
 	}
@@ -288,7 +292,7 @@ func TestTheRealPeerIsStillFollowed(t *testing.T) {
 		t.Fatalf("cannot build the codec: %v", err)
 	}
 
-	observer := &recordingObserver{typing: make(chan bool, 4), messages: make(chan string, 4)}
+	observer := newRecorder(4)
 	session := wired(t, home, homeCodec, &syncBuffer{})
 	session.Observe(observer)
 	session.SetPeer(localAddr(t, oldAddr))
@@ -297,15 +301,16 @@ func TestTheRealPeerIsStillFollowed(t *testing.T) {
 	defer cancel()
 	go session.Run(ctx)
 
-	_, _ = oldAddr.WriteToUDP(peerCodec.Seal(kindMessage, "hola"), localAddr(t, home))
-	<-observer.messages
+	_, _ = oldAddr.WriteToUDP(peerCodec.Seal(kindData, "hola"), localAddr(t, home))
+	<-observer.payloads
 
 	staleOut(t, session)
 
 	// Same codec, new address: the peer moved.
-	_, _ = newAddr.WriteToUDP(peerCodec.Seal(kindMessage, "me mude"), localAddr(t, home))
+	_, _ = newAddr.WriteToUDP(peerCodec.Seal(kindData, "me mude"), localAddr(t, home))
 	select {
-	case got := <-observer.messages:
+	case payload := <-observer.payloads:
+		got := string(payload)
 		if got != "me mude" {
 			t.Fatalf("got %q", got)
 		}
