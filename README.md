@@ -1,52 +1,55 @@
 # vapora
 
-A base tool to open a direct communication channel between two peers across the
-internet, from one shared link, with no account, no registration and no server
-of your own. The chat that ships with it is the test harness, not the product:
-it exists to prove the channel carries traffic.
+Two people, or a few, talking directly to each other across the internet. No
+account, no registration, no server in the middle. You share one line of text
+and the other person runs it.
 
-Everything is standard library. SSDP, SOAP, STUN, PCP, NAT-PMP and the
-authenticated wire format are implemented here, with no external dependencies.
+The chat you get is the proof that it works, not the point. The point is the
+channel underneath it.
 
-## Quick start
+---
 
-```bash
-go run ./cmd/vapora nat      # classify this network
-go run ./cmd/vapora diag     # find out which of your routers filters, and how
-go run ./cmd/vapora punch    # print an invite and wait for a peer
-```
+## 1. Installing it
 
-## Install
+Every push to this project publishes ready-to-run programs. You do not need Go,
+a compiler, or anything else.
 
-Every merge to `main` publishes a release with static binaries for macOS, Linux
-and Windows. Both peers need one, so a link to the release is usually easier
-than asking the other side to install Go.
-
-**Download with `curl`, not with a browser.** On macOS a browser marks whatever
-it downloads with `com.apple.quarantine`, and Gatekeeper then refuses to run a
-binary that Apple has not notarized. `curl` sets no such mark, so the binary
-just runs.
+**Download it with `curl`, from a terminal. Not with your browser.** This
+matters on macOS: a browser marks whatever it downloads as untrusted, and macOS
+then refuses to run it because Apple has not signed off on this program. `curl`
+does not add that mark, so it just runs.
 
 ```bash
-# macOS, Apple Silicon
+# macOS on Apple Silicon (M1 and newer)
 curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_arm64.tar.gz | tar -xz
 
-# macOS, Intel
+# macOS on Intel
 curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_amd64.tar.gz | tar -xz
 
-# Linux, x86-64
+# Linux
 curl -fsSL https://github.com/MalPr0/vapora/releases/latest/download/vapora_linux_amd64.tar.gz | tar -xz
+```
 
+That leaves a file called `vapora` in the folder you are standing in. Check it
+runs:
+
+```bash
 ./vapora version
 ```
 
-On Windows, download `vapora_windows_amd64.zip` from the release page and
-extract it.
+On Windows, download `vapora_windows_amd64.zip` from the releases page and
+unzip it.
 
-### Verify what you downloaded
+### Both of you need the same version
 
-This tool opens a port and talks to strangers, so check the binary before
-running one you did not build. `SHA256SUMS` ships with every release.
+This program talks to itself in a format that has changed and will change
+again. **If two people run different versions, nothing happens and nothing
+explains why.** Before anything else, both run `./vapora version` and compare.
+
+### Checking what you downloaded
+
+This program opens a door in your network, so it is worth a minute to confirm
+you got the real thing and not something swapped in transit.
 
 ```bash
 curl -fsSLO https://github.com/MalPr0/vapora/releases/latest/download/vapora_darwin_arm64.tar.gz
@@ -56,312 +59,417 @@ shasum -a 256 -c SHA256SUMS --ignore-missing   # macOS
 sha256sum -c SHA256SUMS --ignore-missing       # Linux
 ```
 
-### If you did download through a browser
+`OK` means the file is byte for byte what was published.
 
-macOS will refuse to run it, with a dialog saying Apple could not verify the
-binary is free of malware. That is accurate: these releases are signed only
-ad-hoc, not with an Apple Developer ID, so Apple has verified nothing. Strip the
-quarantine mark yourself, but only after checking the checksum above:
+### If you already downloaded it with a browser
+
+macOS will refuse to open it and say Apple could not verify it. That warning is
+honest: these files are not signed with an Apple developer certificate, so Apple
+really has not checked anything. After confirming the checksum above, you can
+clear the mark yourself:
 
 ```bash
 xattr -d com.apple.quarantine ./vapora
 ```
 
-Re-downloading with `curl` avoids the whole thing.
+Downloading with `curl` avoids the whole thing.
 
-### Or build it
+### Or build it yourself
 
-Needs nothing but a Go toolchain, and answers the trust question by not asking
-it:
+If you have Go installed, this answers the trust question by not asking it:
 
 ```bash
 go build ./cmd/vapora
 ```
 
-## How the channel opens
+---
 
-One side prints an invite that is itself a runnable command:
+## 2. Talking to one person
 
-```
-$ go run ./cmd/vapora punch
+One of you goes first and the other joins.
 
-send this to your friend, it is a runnable command:
-
-    vapora punch 203.0.113.7:41001/BXFWOBXKGS547XF2WOKVG6JYDI
-
-waiting for them...
-```
-
-The other side runs exactly that line and both ends punch towards each other.
-There is no server and no host/client role: whoever starts first retries until
-the other shows up. While waiting, the socket keeps its NAT binding warm, since
-an idle mapping expires long before a person reads a message and reacts.
-
-### The chat
-
-Once the path opens, `punch` takes over the terminal with a full screen chat:
-a pixel art console drawn with half block characters and a fixed palette, the
-conversation in the middle, and an input line that renders itself.
-
-Each side is named after an animal, and both names are **derived from the shared
-secret** rather than chosen or sent. Every peer computes the same pair, so
-nobody can decide how they are labelled on the other's screen and no name has to
-be trusted over the wire.
-
-While the other side is writing, a courier runs in the footer and the line reads
-`BADGER is typing`. That state travels as its own encrypted frame, sent on the
-first keystroke and withdrawn when the line is sent or two seconds pass with no
-typing.
-
-### Knowing the path is still there
-
-UDP has no connection, so there is nothing to close and no close to be told
-about. A peer that walks away, loses wifi or gets killed looks exactly like a
-peer with nothing to say.
-
-So the session sends a ping every five seconds and the other side answers with a
-pong. Neither ever reaches the chat: a healthy path stays invisible, and the
-probe exists only to make silence measurable. Any frame that authenticates
-counts as proof of life, so a talkative peer is never probed for nothing.
-
-After twelve seconds of silence the header shows `no reply 14s`; after
-forty-five it blinks `LINK LOST`. Probing continues either way, because a path
-that healed on its own should come back without anyone restarting anything. When
-it is healthy the header carries the round trip instead, which is the only thing
-the probe is otherwise good for.
-
-The five second interval is not a detection tuning: it is below the shortest NAT
-binding timeouts seen in the wild, so the same packet that measures the path
-also keeps it open.
-
-### Coming back after a break
-
-Three things can break an open path, and they are not equally recoverable.
-
-**The routers forgot.** A laptop lid, an idle stretch, a NAT dropping state:
-both endpoints are unchanged, only the pinholes are gone. The moment the path
-goes quiet the ping cadence tightens and punches start again, so this heals with
-nobody doing anything.
-
-**Your friend moved.** New wifi, cellular handover, a restart on another port.
-Their address is new and nothing announced it. If a frame arrives from somewhere
-else and it authenticates, the path follows it. That is safe for the same reason
-the invite is: only the holder of the secret can produce such a frame, so
-following one trusts exactly what was already trusted. A healthy conversation
-never follows, which keeps two live paths from chasing each other.
-
-**You moved.** Now the address on the invite you shared has stopped existing and
-your friend is talking to nobody. A STUN watcher shares the socket with the
-session and notices, and the chat hands you a fresh invite to send. This one
-cannot be automatic: telling them the new address needs a channel that still
-works, which is the same gap a rendezvous would fill.
-
-Typing `!exit` ends the session at once. It is checked before a line becomes a
-message, so it never reaches the peer as text, and it says goodbye on the way
-out: quitting on purpose is otherwise indistinguishable from a network that went
-quiet, and the other side would wait out the whole silence budget to find out.
-
-The conversation stacks upward from the input line and keeps its whole history:
-`pgup` and `pgdn` walk it, a marker shows how much is hidden above and below,
-and sending a line snaps back to the newest one.
-
-The UI needs a terminal. Piped input, a CI job or a terminal that refuses raw
-mode all fall back to plain lines automatically, and `-plain` forces it.
-
-### The secret in the invite
-
-The waiting socket accepts packets from any source, which is what lets an
-unannounced peer in. The random secret appended to the endpoint is what keeps
-that from being an open door: it is the session key, and a frame that does not
-authenticate under it is dropped without ever becoming the peer.
-
-It is not a password compared on arrival. Two AES-256-GCM keys are derived from
-it with HKDF-SHA256, one per direction, so every frame is encrypted and
-authenticated, no nonce is ever reused under a key, and replays are rejected by
-an IPsec style sliding window. The secret is 128 random bits from `crypto/rand`;
-being full entropy already, it needs a KDF, not password stretching.
-
-**The invite is a credential.** It belongs on a channel you trust, and both
-sides must carry the same one or they never see each other.
-
-Handing it to a third person does not add them to the conversation. Everyone
-with the invite seals under the same key, so their frames authenticate as well
-as your friend's, and the session tells them apart by the nonce prefix, which is
-drawn per process. A move is only followed when it comes from the side already
-established: you cannot be replaced once you have spoken. The attempt is
-reported, because a frame that authenticates from somewhere that is not your
-friend means the invite is no longer private. There is no
-unauthenticated mode: a socket reachable from the internet has no business
-running without the AEAD, and the secret costs nothing.
-
-Control frames carry random filler. AEAD hides what a frame says but not how
-long it is, and a ping with nothing to carry would be a fixed size arriving on a
-fixed cadence, which is a heartbeat visible to anyone counting bytes. Padding
-puts it inside the same size spread as the messages it travels among.
-
-### Only text crosses the channel
-
-Outgoing lines are sanitised, so what leaves is always text. Incoming ones are
-**validated**, and a frame carrying anything else is dropped rather than cleaned
-up and shown: a peer sending non-text is not this program, and treating it as a
-rendering problem would be papering over that.
-
-### What an attacker can and cannot learn
-
-Traffic that fails to authenticate is **never answered**. A scanner sweeping this
-port gets silence, which is the same thing it gets from a closed port, so
-probing confirms nothing.
-
-It is counted, though. An address that only ever appeared on one invite should
-not be hearing from anybody else, so the session reports it: `6 packets from 1
-address(es) reached this port and could not authenticate`. That is not an attack
-in progress, it is a signal that the invite is more public than it was meant to
-be, and starting a new session gives a new secret and usually a new port.
-
-What no amount of code hides: **your peer sees your IP**, because the packets go
-from your address to theirs; **so do the STUN servers**, because asking what your
-address is means asking somebody; and **so does whoever sees the invite**, since
-it carries the address. Those are properties of a direct channel, not defects to
-fix, and the only way around them is relaying every packet through a third
-party.
-
-### What anonymous means here
-
-No accounts, no registration, and no server that learns who talks to whom.
-
-It does **not** mean your peer cannot see you: on a direct channel the packets
-travel from your address to theirs, so each end learns the other's IP. That is
-what direct means. Hiding that would require relaying every packet through a
-third party, which is the opposite of what this tool does.
-
-## Rooms
-
-`vapora punch` is for two people and does not change. A room is a separate
-command, because a mesh needs a different handshake and a different invite, and
-folding the two would mean two ways for each to go wrong.
+**You:**
 
 ```bash
-vapora room                  # open one and print an invite
-vapora room <invite>         # join with an invite anyone in it sent you
+./vapora punch
 ```
 
-Everyone talks to everyone **directly**. Whoever introduces two people never
-carries a word between them and could not read it if it tried: each pair derives
-its own channel from an X25519 agreement, and the invite secret is demoted to
-sealing exactly one frame, the hello of somebody arriving.
+It prints a line like this:
 
-That is also what makes the introduction the whole job. Naming a newcomer to
-each member is enough, because it gets both sides punching at the same moment,
-which is exactly what a port restricted NAT needs. For the third person onward,
-an established room **is** the rendezvous.
+```
+vapora punch 203.0.113.7:41001/BXFWOBXKGS547XF2WOKVG6JYDI
+```
 
-**Anyone can invite**, including somebody who just joined, and the room converges
-by gossip rather than by asking whoever started it. Nothing anybody says about
-the room is believed: a roster entry is an address worth punching at, never
-proof that somebody is there. Only a frame that opens under the pair key makes
-anybody a member, so a member that lies about who is present wastes packets and
-nothing else.
+Send that to your friend however you normally talk — it is just text.
 
-Names come from keys, so everyone calls everyone the same thing without a word
-being sent about it. Only as much of a name is shown as tells apart who is
-present: three people see OTTER, BADGER and HERON, and the colour and adjective
-appear when two would otherwise collide. `@name` marks a line as addressed to
-you. `!who` lists the room, `!invite` prints a fresh invite, `!exit` leaves.
+**Your friend:** pastes the whole line into their terminal and runs it.
 
-Rooms hold eight. Seven pairs at one ping every five seconds is under three
-packets a second, and twenty eight punched paths is where restrictive NATs start
-failing in earnest.
+If the two of you are lucky, that is it. Often it is not, and there is one more
+step.
 
-## The UPnP path
+### The step most people miss
 
-`serve` maps a port and hosts a chat on it; `connect` joins. That port is
-reachable from the internet, so the chat is authenticated and encrypted with the
-same session key mechanism the punch channel uses, and `serve` prints an invite
-exactly like `punch` does.
+Home routers usually refuse packets from a stranger they have never sent
+anything to. When both of your routers do that, your friend's first packet dies
+at your door and yours dies at theirs. Neither of you did anything wrong.
 
-It hosts one conversation at a time. That is not a limitation to work around:
-every peer would otherwise share one direction key, and two of them could
-collide on a nonce under it.
+The fix is that **both of you send an invite**, not just one:
 
-## Whether one link is enough
+1. You run `./vapora punch` and send your line.
+2. Your friend pastes it and runs it.
+3. **Their screen now prints a line too**, under the words *"if it does not
+   connect, send this back"*. They send that one to you.
+4. You paste it into your terminal, which is still waiting.
 
-That depends on the **filtering** behaviour of the waiting side, which `nat`
-reports and `diag` attributes to a specific router.
+Now both of you are knocking on each other's door at the same moment, which is
+exactly what those routers need to see. This is normal, not a workaround.
 
-- `endpoint-independent (full cone)` — the peer's first packet gets in and the
-  invite alone connects the two.
-- anything stricter — that packet is dropped, because the waiting side never
-  contacted that endpoint. The joining side also prints its own invite; pasting
-  it back into the waiting terminal completes the handshake. Pasting works at
-  any moment while it waits, and the whole line can be pasted as is.
+Section 6 shows how to find out in advance whether you need this step.
 
-### Asking whether it will work at all
+### While you are chatting
 
-A measurement of one end cannot answer that: reaching somebody is a property of
-the two networks together, not of either one. So `nat` and `diag` end with a
-short code for this side, meant to be pasted to the other:
+Type and press enter. Some things worth knowing:
+
+- **`@name`** marks a line as addressed to someone. Their screen pulls it out
+  of the conversation with a mark in the margin, so it is still findable after
+  it scrolls past.
+- **`!exit`** leaves, and tells the other side right away instead of leaving
+  them staring at a frozen screen.
+- **Page Up and Page Down** scroll back through what was said.
+- **`-plain`** turns off the full-screen interface and prints plain lines
+  instead. Use it when something is wrong: the full-screen version erases
+  itself when it closes, and plain output stays in your terminal where you can
+  read it or send it to someone.
+
+---
+
+## 3. Talking to several people
+
+A room is a separate command. It is not the two-person chat with more chairs:
+the way people are protected from each other has to work differently once there
+are three, so it has its own handshake and its own invite.
+
+**Whoever starts:**
+
+```bash
+./vapora room
+```
+
+It prints an invite. Anyone who runs it joins.
+
+**Everyone else:**
+
+```bash
+./vapora room "vapora room 203.0.113.7:41001/AE3LG7ILJPAT..."
+```
+
+### What is different about a room
+
+**Everyone talks to everyone directly.** The person who invited you does not
+carry your words to anyone. They introduce you and step out of the way, and even
+if they wanted to, they could not read what you say to a third person.
+
+**Anyone can invite.** Not just whoever started it. If you joined five minutes
+ago, `!invite` gives you a line to bring in the next person, and everybody ends
+up knowing everybody without asking the original host.
+
+**Names are chosen for you.** You will be something like `OTTER` or, if two
+people would otherwise clash, `CRIMSON OTTER`. Nobody picks their own name and
+everybody sees the same names for the same people, so a name always means one
+specific person and cannot be claimed by somebody else.
+
+**Rooms hold eight.** Past that it is a lot of connections for home routers to
+keep open, and quality falls off faster than the conversation improves.
+
+**Rooms are plain lines today.** The full-screen chat, the typing indicator and
+the `@` highlighting exist for the two-person version and have not been built
+for rooms yet. Everything underneath — the encryption, the direct connections,
+the names — is the finished part.
+
+### Room commands
+
+- **`!who`** lists who is present and whether each connection is healthy.
+- **`!invite`** prints a fresh invite to bring somebody in.
+- **`!exit`** leaves and tells everyone.
+
+---
+
+## 4. What it actually does
+
+Some background in plain terms, then the specifics.
+
+### The problem
+
+Your computer does not have its own address on the internet. Your router has
+one, and everything in your home shares it. That is called **NAT**. It is why
+someone cannot simply "call" your laptop: from the outside, your laptop is not
+addressable.
+
+The usual answer is to put a server in the middle that both sides connect *out*
+to. That works, and it means somebody else's computer sees every word.
+
+### What this does instead
+
+**Hole punching.** When your computer sends a packet out, your router briefly
+remembers "if something comes back this way, it belongs to them". If both
+computers send to each other at the same moment, both routers open that memory
+at the same time, and the two sides meet in the middle. No server, and the
+conversation goes straight from one house to the other.
+
+For that you need to know your own address as the outside world sees it, which
+is what **STUN** is for: a small public service that answers "this is where your
+packet came from". It sees your address; it never sees your conversation.
+
+### The specifics
+
+Everything below is written from scratch against the Go standard library. There
+are no third-party dependencies at all.
+
+**Finding your address and understanding your router**
+
+- **STUN** (RFC 5389) to learn the address the internet sees for you.
+- **NAT behaviour discovery** (RFC 5780) to find out what your router allows.
+- **UPnP-IGD** (SSDP and SOAP) to ask your router to open a door, when it will.
+- **PCP** (RFC 6887) and **NAT-PMP** (RFC 6886), two other ways to ask, for the
+  routers that refuse the first one.
+
+**Protecting the conversation**
+
+- **X25519** key agreement (`crypto/ecdh`) so each pair of people in a room
+  derives a channel only those two can read.
+- **HKDF-SHA256** to turn that agreement into keys.
+- **AES-256-GCM** on every single packet, with a separate key per direction.
+- A **replay window** in the style of IPsec, so a packet captured and sent again
+  later is rejected.
+- **Random padding** on the packets that carry no content, so someone watching
+  the network cannot pick out the heartbeats by their size and fingerprint what
+  you are running.
+
+**Keeping it alive**
+
+- A ping every five seconds that also keeps the router's memory fresh.
+- Twelve seconds of silence reads as trouble, forty-five as lost, and it keeps
+  trying either way.
+- If the other person's address changes, the channel follows them, but only if
+  it is really them (see section 7).
+
+---
+
+## 5. Why this will stop working someday
+
+Honest limitations, not fine print.
+
+**The public STUN servers are somebody else's.** This program asks Google,
+Cloudflare and two others where your packets come from. They are free services
+run for other purposes. If they disappear, move, or start blocking, this program
+cannot learn your own address and cannot print an invite. There is no fallback
+today.
+
+**Some networks block it outright.** Company networks, universities, hotels and
+some mobile carriers filter this kind of traffic. Nothing on your end fixes
+that.
+
+**Some home connections cannot do it at all.** If your provider gives you what
+is called a *symmetric* NAT, or puts you behind their own large shared NAT
+(carrier-grade NAT, common on mobile), your address is unpredictable from one
+moment to the next and there is nothing to aim at. `vapora nat` tells you if you
+are in this situation. There is no software fix: it needs a relay server, which
+this program deliberately does not have.
+
+**Your address changes and the invite dies.** The line you shared points at a
+specific door. Change wifi, switch to mobile data, or let it sit idle long
+enough and that door is gone. The program notices and prints you a new invite,
+but you have to send it again.
+
+**Versions stop matching.** The format two copies of this program use to talk
+has changed several times and will change again. Old and new do not
+interoperate, and the symptom is silence.
+
+**Nobody can join a conversation that already ended.** There is nothing stored
+anywhere. Close the program and the conversation is gone, on both sides.
+
+**One thing that would help does not exist yet.** For two people who both have
+restrictive routers, a single invite is not enough (section 2). Fixing that
+needs a way for two strangers to find each other, which normally means a server.
+There is a design for doing it without one, using the BitTorrent network as a
+meeting point, and it is not built.
+
+---
+
+## 6. Finding out what is wrong
+
+### Will this work at all?
+
+```bash
+./vapora nat
+```
+
+This measures your connection and finishes with a short code:
 
 ```
 your profile: CONE-PORT-18
 ```
 
-Send it, get theirs back, and pair them:
+That code describes your side. **It cannot tell you whether a connection will
+work**, because that depends on both networks, not just yours. So send it to the
+person you want to talk to, get theirs, and put them together:
 
 ```bash
-vapora nat -pair CONE-OPEN-64
+./vapora nat -pair CONE-OPEN-64
 ```
 
-That says what to expect before anyone wastes half an hour on it: whether a
-direct path is reachable at all, whether one invite is enough or both have to be
-exchanged, and **which side has to be the one waiting**. The last one matters
-more than it sounds: two people who both wait for each other wait forever, and
-that failure looks exactly like a network problem.
+Now you get a real answer: whether a direct connection is possible at all,
+whether one invite is enough or both of you need to exchange one, and **which of
+you has to be the one waiting**. That last part matters more than it sounds — if
+you both wait for each other, you both wait forever, and it looks exactly like a
+broken network.
 
-A symmetric NAT is the one verdict that is definitively negative on its own,
-because a side that hands out a new port per destination cannot be told where to
-aim. Everything else is a prediction; the only proof is trying.
+One result is bad news on its own: if your code starts with `SYM`, your provider
+gives you an unpredictable address and no amount of trying will help.
 
-`diag` exists because a STUN report only describes the whole chain end to end.
-Behind two cascaded NATs it cannot say which one is restrictive, so `diag` runs
-an experiment instead of a measurement: it installs a UPnP mapping for one
-socket, re-measures it against an unmapped control socket, and checks five
-confounders before reaching a verdict.
+### A closer look at your routers
 
-The mapping matters because the UPnP-IGD spec (WANIPConnection v2, §2.3.17)
-gives a wildcard `RemoteHost` mapping endpoint-independent filtering. If the
-filtering opens for the mapped socket and not for the control, the router that
-speaks UPnP was the one dropping packets, and it can be told to stop. If nothing
-changes, the restriction lives upstream, out of reach.
-
-## Port control protocols
-
-`diag` probes each gateway for all three mechanisms, because a router that
-refuses one often answers another:
-
-- **UPnP-IGD** over SSDP and SOAP, including cascaded double NAT traversal.
-- **PCP** (RFC 6887). A `MAP` without a FILTER option is endpoint-independent by
-  the spec's own wording, which is stronger than UPnP's.
-- **NAT-PMP** (RFC 6886), detected from the version 0 rejection a legacy gateway
-  gives to a PCP request.
-
-## Layout
-
-```
-cmd/vapora      CLI: nat, diag, punch, probe, serve, connect
-pkg/punch       hole punching, invite secrets, the authenticated wire format
-pkg/stun        STUN (RFC 5389) and NAT behaviour discovery (RFC 5780)
-pkg/pcp         PCP (RFC 6887) and NAT-PMP (RFC 6886)
-pkg/upnp        SSDP, device description, SOAP, port mappings, NAT chain
-pkg/diag        the differential experiment that attributes filtering
-pkg/text        sanitises what arrives from the network before a terminal sees it
-internal/tui    the pixel art chat: renderer, sprites, key decoding, raw mode
-internal/chat   the TCP chat used as the traffic probe for the UPnP path
+```bash
+./vapora diag
 ```
 
-Everything under `pkg/` is importable and is where the contract lives.
-`internal/chat` is demo scaffolding and carries no promises.
+This checks each router between you and the internet, asks each one in three
+different languages whether it will open a door, and — if you have more than one
+router, which is common — runs an experiment to work out **which one** is the
+problem. That distinction is what tells you whether it is something you can fix
+or something at your provider.
 
-## Development
+It works even on a network with no cooperative router at all; it just says so
+and carries on with the rest.
+
+### When a connection failed
+
+Run with **`-plain`**. The full-screen chat erases itself when it closes, so a
+failed attempt leaves you with an empty screen and no clue. Plain mode leaves
+everything in your terminal.
+
+Closing the full-screen version also prints a short summary of what happened:
+whether a connection was ever made, why not, the invite you were offering, and
+whether you were the one waiting.
+
+### Other tools
+
+- **`./vapora version`** — the first thing to compare when two people cannot
+  connect.
+- **`./vapora probe`** — shows your router and the address it thinks it has.
+
+---
+
+## 7. Security and privacy
+
+### What protects the conversation
+
+**The invite is the key.** That string at the end of the line you share is not a
+name or an address — it is the secret that encrypts the conversation. Everything
+sent is encrypted with it using AES-256-GCM, with a different key for each
+direction. Someone who watches your network sees packets and learns nothing from
+them.
+
+**There is no unencrypted mode.** It cannot be turned off, and there is no
+option to. A program that opens a door to the internet has no business running
+without it, and the encryption costs nothing.
+
+**In a room, each pair has its own key.** Two people in a room of five have a
+channel that the other three cannot read, even though everyone holds the same
+invite. This is not a promise about behaviour, it is arithmetic: the other three
+do not have the keys.
+
+**Someone else cannot take over your conversation.** If you hand your invite to
+a third person, they cannot push your friend out and take their place. The
+program can tell them apart, ignores the newcomer, and **tells you** that
+somebody else is holding your invite — which is worth knowing.
+
+**Only text crosses.** Anything else is dropped rather than shown. And nothing
+that arrives can drive your terminal: text from the network is stripped of the
+invisible sequences that would let someone move your cursor, repaint your
+screen, or reach your clipboard.
+
+**Silence to strangers.** Packets that do not carry the right key get no reply
+whatsoever. Someone scanning for open ports gets exactly what they would get
+from a closed one, so scanning tells them nothing. It is counted, though, and
+you are told, because it means somebody found an address that should only have
+been on one invite.
+
+### What "no account" means, and what it does not
+
+There is nothing to sign up for, no profile, no phone number, no server that
+records who spoke to whom. Nobody is keeping a list.
+
+**That is not the same as being invisible**, and the difference is worth being
+clear about:
+
+- **The person you talk to sees your IP address.** They must — the packets go
+  from your home to theirs. That is what "direct" means.
+- **The STUN servers see your IP address.** Asking where your packets come from
+  means asking someone.
+- **Anyone who sees your invite sees your IP address**, because it is written in
+  it.
+
+If you need the other person not to know where you are, this is the wrong tool.
+That requires routing everything through a third party, which is the exact thing
+this avoids.
+
+---
+
+## 8. Dangers
+
+**Treat the invite like a password.** It is the key to the conversation. Send it
+somewhere you trust. Anyone who sees it — in a screenshot, a group chat, over
+someone's shoulder — can use it.
+
+**If you are told someone else is using your invite, believe it.** The program
+says so when packets arrive carrying your key from somewhere that is not your
+friend. It cannot be a mistake: random internet noise never carries your key.
+Quit and start a new conversation. That gives you a new key and usually a new
+address.
+
+**An invite you shared stays valid until you close the program.** There is no
+expiry and no way to revoke one. Closing and reopening is the revocation.
+
+**Nothing is protected after the fact.** If someone records your encrypted
+traffic today and gets your invite later, they can read that recording. Serious
+tools solve this with keys that are thrown away as you go; this one does not.
+
+**In a room, members can lie about who else is present** — they can announce
+somebody who does not exist. What they cannot do is read or forge what two other
+people say. A made-up member simply never answers and disappears on its own.
+
+**These programs are not signed.** macOS and Windows will warn you, and they are
+right to. Check the checksum (section 1) or build it yourself.
+
+**`vapora serve` opens a port on your router.** It asks your router to accept
+connections from the internet on a port and closes it again when you quit. It is
+protected by an invite the same way everything else is, but it is the one
+command here that changes your router's configuration. If it crashes, that door
+may stay open until you restart the router.
+
+**Do not rely on this for anything that matters.** It is young, it has never
+been reviewed by anybody who breaks software for a living, and the construction
+being careful is not the same thing as it being audited.
+
+---
+
+## Layout, for the curious
+
+```
+cmd/vapora      the commands: nat, diag, punch, room, probe, serve, connect
+pkg/punch       hole punching, rooms, identity, the encrypted packet format
+pkg/stun        finding your own address and measuring your router
+pkg/pcp         two more ways to ask a router to open a door
+pkg/upnp        the most common way to ask a router to open a door
+pkg/diag        the experiment that works out which router is the problem
+pkg/text        strips anything from the network that could drive a terminal
+internal/tui    the full-screen chat
+internal/chat   a simpler chat used to prove the UPnP path carries traffic
+```
+
+Everything under `pkg/` can be used as a library. `internal/` is scaffolding and
+carries no promises.
 
 ```bash
 go test ./... -race
