@@ -66,7 +66,14 @@ func (s *screen) render(state State, mine, theirs string, status string) string 
 	}
 
 	s.frame.WriteString("\x1b[38;5;240m  " + strings.Repeat("─", columns/2) + "\x1b[0m\x1b[K\n")
-	s.frame.WriteString("  \x1b[38;5;250m" + status + "\x1b[0m\x1b[K\n")
+
+	// The status on the left, the credit pushed to the right edge of the court.
+	gap := columns - len(status) - len("powered by vapora")
+	if gap < 2 {
+		gap = 2
+	}
+	s.frame.WriteString("  \x1b[38;5;250m" + status + "\x1b[0m" +
+		strings.Repeat(" ", gap) + credit() + "\x1b[K\n")
 	return s.frame.String()
 }
 

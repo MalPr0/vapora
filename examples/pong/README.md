@@ -25,16 +25,39 @@ go run ./examples/pong join <invite> # the other machine
 `w`/`s` moves, `r` starts again, `q` quits. First to eleven.
 
 ```
-  CRIMSON OTTER 7   —   6 JADE HERON
+      █▀▀▀▄ ▄▀▀▀▄ █▄  █ ▄▀▀▀▄
+      █▄▄▄▀ █   █ █▀▄ █ █  ▄▄
+      █     █   █ █  ██ █   █
+      ▀      ▀▀▀  ▀   ▀  ▀▀▀
+
+      powered by
+
+      █   █  ▄▀▄  █▀▀▀▄ ▄▀▀▀▄ █▀▀▀▄  ▄▀▄
+      █   █ █   █ █▄▄▄▀ █   █ █▄▄▄▀ █   █
+      ▀▄ ▄▀ █▀▀▀█ █     █   █ █  ▀▄ █▀▀▀█
+        ▀   ▀   ▀ ▀      ▀▀▀  ▀   ▀ ▀   ▀
+
+      direct, encrypted, no server in the middle
+
+      run this on the other machine:
+
+        pong join 203.0.113.7:41001/BXFWOBXKGS547XF2WOKVG6JYDI
+
+      waiting for a challenger...
+```
+
+Then the court, which is the whole game:
+
+```
+  QUAIL 7   —   6 WAPITI
   ───────────────────────────────────────
                                           
-    █                  ██                 
-    █                  ██              █  
-    █                                  █  
-    █                                  █  
+    █                    ▄                
+    █                    █             █  
+                                       █  
                                           
   ───────────────────────────────────────
-  w/s moves  ·  r resets  ·  47ms  ·  q quits
+  w/s moves  ·  r resets  ·  47ms  ·  q quits          powered by vapora
 ```
 
 ---

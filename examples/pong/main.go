@@ -65,13 +65,15 @@ func host(ctx context.Context) error {
 		return err
 	}
 
+	fmt.Print(splash())
+
 	table, endpoint, err := connect(ctx, secret, punch.RoleInviter, nil)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\n  run this on the other machine:\n\n    pong join %s/%s\n\n", endpoint, secret)
-	fmt.Println("  waiting for a challenger...")
+	fmt.Printf("\n      run this on the other machine:\n\n        pong join %s/%s\n\n", endpoint, secret)
+	fmt.Println("      waiting for a challenger...")
 
 	if err := table.session.Open(ctx, 3*time.Minute); err != nil {
 		return err
@@ -85,12 +87,14 @@ func join(ctx context.Context, invite string) error {
 		return err
 	}
 
+	fmt.Print(splash())
+
 	table, _, err := connect(ctx, parsed.Secret, punch.RoleJoiner, parsed.Endpoint)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("\n  connecting...")
+	fmt.Println("\n      connecting...")
 	if err := table.session.Open(ctx, 3*time.Minute); err != nil {
 		return err
 	}
