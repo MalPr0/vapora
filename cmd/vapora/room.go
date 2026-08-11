@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -455,12 +454,22 @@ func (r *room) watchMembers(ctx context.Context) {
 }
 
 func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		if ctx.Err() != nil {
+	lines := readLines(ctx)
+
+	for {
+		var line string
+		select {
+		case <-ctx.Done():
 			return nil
+		case typed, open := <-lines:
+			if !open {
+				// Standard input ended, which a pipe does immediately. The
+				// session is still live, so wait for it rather than exiting.
+				<-ctx.Done()
+				return nil
+			}
+			line = typed
 		}
-		line := scanner.Text()
 
 		switch {
 		case isExit(line):
@@ -480,9 +489,6 @@ func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
 			r.room.Broadcast(line)
 		}
 	}
-
-	<-ctx.Done()
-	return nil
 }
 
 // pastePlain is the line based half of the paste back: an address the other

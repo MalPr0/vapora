@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+set stty_init "rows 40 columns 200"
+set timeout 25
+log_user 0
+
+spawn ./vapora room -plain -port 43401 -advertise 127.0.0.1:43401
+set a $spawn_id
+expect -i $a -re "127\\.0\\.0\\.1:43401/\[A-Z2-7\]+"
+set ia $expect_out(0,string)
+
+spawn ./vapora room -plain -port 43402 -advertise 127.0.0.1:43402 $ia
+set b $spawn_id
+expect -i $b -re "you are in"
+
+send -i $b -- "hola\r"
+expect -i $a -re "hola"
+sleep 1
+
+# ctrl+c on a room that is live and mid conversation
+send -i $a -- "\003"
+expect -i $a {
+    eof { puts "PASS: a connected room also ends on one ctrl+c" ; exit 0 }
+    timeout { puts "FAIL: a connected room ignored ctrl+c" ; exit 1 }
+}

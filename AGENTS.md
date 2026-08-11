@@ -118,6 +118,11 @@ a signature is a change to the contract.
   terminal, and a cut invite looks copyable and decodes to nothing. The view
   wraps it and `joinToken` puts it back together on paste — a wrapped invite
   arriving by chat is the normal case, not the edge case.
+- **Nothing waits on stdin directly.** `bufio.Scanner` blocks in a read that
+  neither a cancelled context nor a signal can interrupt, so a session that
+  waits on it ignores ctrl+c until the next time somebody presses enter — which
+  reads as a hung program. `readLines` turns it into a channel that can be
+  selected against `ctx.Done()`.
 - **Nothing the DHT returns is trusted.** That network has nodes answering every
   key with addresses nobody announced, including ones that mirror the port just
   announced — both were seen while testing this. An address from there is a

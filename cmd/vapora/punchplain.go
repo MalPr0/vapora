@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"time"
 
 	"github.com/MalPr0/vapora/pkg/punch"
@@ -80,12 +78,20 @@ func printInvite(open *channel, endpoint *net.UDPAddr) {
 // readStdin doubles as the invite prompt before the path is open and as the
 // chat input once it is, so a single reader owns the terminal.
 func readStdin(ctx context.Context, open *channel, quit context.CancelFunc) {
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		if ctx.Err() != nil {
+	lines := readLines(ctx)
+
+	for {
+		var line string
+		select {
+		case <-ctx.Done():
 			return
+		case typed, more := <-lines:
+			if !more {
+				<-ctx.Done()
+				return
+			}
+			line = typed
 		}
-		line := scanner.Text()
 
 		if isExit(line) {
 			leave(open.session)

@@ -313,5 +313,16 @@ func formatLease(lease time.Duration) string {
 }
 
 func signalContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-ctx.Done()
+		// Hand the signal back to the runtime once the first one has been
+		// delivered, so a second ctrl+c kills the process outright. The first
+		// interrupt asks the session to leave properly; if anything is wedged,
+		// the second must not have to ask anybody's permission.
+		stop()
+	}()
+
+	return ctx, stop
 }
