@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/MalPr0/vapora/internal/tui"
 	"github.com/MalPr0/vapora/pkg/punch"
 	"github.com/MalPr0/vapora/pkg/stun"
 	"github.com/MalPr0/vapora/pkg/text"
@@ -25,9 +28,14 @@ type room struct {
 	room      *punch.Room
 	watcher   *stun.Watcher
 	joining   *punch.RoomInvite
+	advertise string
 	timeout   time.Duration
 	endpoint  *net.UDPAddr
-	announced bool
+
+	mu     sync.Mutex
+	shared string
+	failed string
+	joined bool
 }
 
 func runRoom(args []string) error {
@@ -36,6 +44,7 @@ func runRoom(args []string) error {
 	timeout := flags.Duration("timeout", 3*time.Minute, "how long to keep trying before giving up")
 	keepalive := flags.Duration("keepalive", stun.DefaultKeepalive, "how often to refresh the NAT binding")
 	advertise := flags.String("advertise", "", "put this address on invites instead of the one STUN reports")
+	plain := flags.Bool("plain", false, "skip the full screen UI and use plain lines")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -73,25 +82,70 @@ func runRoom(args []string) error {
 		return err
 	}
 
-	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining, timeout: *timeout}
-	party.Observe(open)
+	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining, timeout: *timeout, advertise: *advertise}
 
 	go mux.Run(ctx)
 	go watcher.Run(ctx, conn)
-	go open.announce(ctx, *advertise)
 
-	if joining != nil {
-		fmt.Printf("\njoining the room at %s\n", joining.Endpoint)
-		if err := party.Join(ctx, *joining, *timeout); err != nil {
+	if !*plain && tui.IsTerminal(os.Stdin) {
+		if err := runRoomUI(ctx, open); err == nil || !errors.Is(err, errNoTerminal) {
 			return err
 		}
-		fmt.Printf("you are in. You are %s\n", party.Me().Name)
+		// The terminal refused raw mode, so fall through to plain lines rather
+		// than leaving the user with nothing.
+	}
+	return open.runPlain(ctx, cancel)
+}
+
+// runPlain is the line based front end: what a pipe, a CI job or a terminal
+// that refuses raw mode gets.
+func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
+	r.room.Observe(r)
+	go r.announce(ctx, r.advertise, nil)
+
+	if r.joining != nil {
+		fmt.Printf("\njoining the room at %s\n", r.joining.Endpoint)
+		if err := r.room.Join(ctx, *r.joining, r.timeout); err != nil {
+			return err
+		}
+		fmt.Printf("you are in. You are %s\n", r.room.Me().Name)
 	} else {
 		fmt.Println("\nwaiting for somebody to join...")
 	}
 
-	go open.watchMembers(ctx)
-	return open.readInput(ctx, cancel)
+	go r.watchMembers(ctx)
+	return r.readInput(ctx, quit)
+}
+
+// connect is the same sequence for the full screen front end, reported through
+// the view instead of to standard output.
+func (r *room) connect(ctx context.Context, chat *tui.Chat) error {
+	chat.SetStatus("looking up your public endpoint", 0.05)
+	go r.announce(ctx, r.advertise, chat)
+
+	if r.joining == nil {
+		// The invite is only on the waiting screen, and it is the whole point of
+		// hosting: going straight to an empty conversation leaves the host with
+		// nothing to send anyone.
+		chat.SetStatus("waiting for somebody to join", 0.2)
+		if err := r.waitForCompany(ctx); err != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.joined = true
+		r.mu.Unlock()
+		return nil
+	}
+
+	chat.SetStatus("joining the room", 0.2)
+	if err := r.room.Join(ctx, *r.joining, r.timeout); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	r.joined = true
+	r.mu.Unlock()
+	return nil
 }
 
 // resolveRoom decides between opening a room and joining one: an invite as
@@ -114,31 +168,95 @@ func resolveRoom(args []string) (punch.Secret, *punch.RoomInvite, error) {
 
 // announce prints an invite as soon as this side knows its own address, and
 // again whenever that address moves out from under it.
-func (r *room) announce(ctx context.Context, advertise string) {
+func (r *room) announce(ctx context.Context, advertise string, chat *tui.Chat) {
 	if advertise != "" {
 		if endpoint, err := net.ResolveUDPAddr("udp4", advertise); err == nil {
-			r.show(endpoint)
+			r.show(endpoint, chat)
 			return
 		}
 	}
 
 	r.watcher.OnChange(func(_, current *net.UDPAddr) {
-		fmt.Printf("\n-- your address changed, the invite you shared is dead. Send this one:\n")
-		r.show(current)
+		if chat != nil {
+			chat.System("your address changed, the invite you shared is dead")
+		} else {
+			fmt.Print("\n-- your address changed, the invite you shared is dead. Send this one:\n")
+		}
+		r.show(current, chat)
 	})
 
 	endpoint, err := r.watcher.Wait(ctx, endpointTimeout)
 	if err != nil {
+		if chat != nil {
+			chat.SetInvite("no STUN server answered, there is no address to share")
+			return
+		}
 		fmt.Println("\nno STUN server answered, so there is no address to put on an invite.")
 		return
 	}
-	r.show(endpoint)
+	r.show(endpoint, chat)
 }
 
-func (r *room) show(endpoint *net.UDPAddr) {
+func (r *room) show(endpoint *net.UDPAddr, chat *tui.Chat) {
+	invite := r.room.Invite(endpoint).Command(roomCommand)
+
+	r.mu.Lock()
 	r.endpoint = endpoint
-	fmt.Printf("\ninvite anyone with this, it is a runnable command:\n\n    %s\n\n",
-		r.room.Invite(endpoint).Command(roomCommand))
+	r.shared = invite
+	r.mu.Unlock()
+
+	if chat != nil {
+		chat.SetInvite(invite)
+		return
+	}
+	fmt.Printf("\ninvite anyone with this, it is a runnable command:\n\n    %s\n\n", invite)
+}
+
+// waitForCompany holds the host on the waiting screen until the first member
+// authenticates. Membership is a poll like everything else here: nothing
+// arrives to announce that somebody is about to arrive.
+func (r *room) waitForCompany(ctx context.Context) error {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	deadline := time.After(r.timeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return fmt.Errorf("nobody joined within %s", r.timeout)
+		case <-ticker.C:
+			if len(r.room.Members()) > 0 {
+				return nil
+			}
+		}
+	}
+}
+
+// note records why a session ended, and report writes it to the real screen
+// once the full screen view has handed it back.
+func (r *room) note(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failed = reason
+}
+
+func (r *room) report() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.joined {
+		fmt.Println("\nthe room is closed.")
+		return
+	}
+	fmt.Println("\nyou never got into a room.")
+	if r.failed != "" {
+		fmt.Printf("  %s\n", r.failed)
+	}
+	if r.shared != "" {
+		fmt.Printf("  the invite this side was offering:\n    %s\n", r.shared)
+	}
 }
 
 // Message and Typing satisfy the room observer. Every line names who said it:
@@ -191,14 +309,14 @@ func (r *room) readInput(ctx context.Context, quit context.CancelFunc) error {
 			r.room.Goodbye()
 			quit()
 			return nil
-		case strings.TrimSpace(line) == "!who":
+		case trimmed(line) == "!who":
 			r.listMembers()
-		case strings.TrimSpace(line) == "!invite":
+		case trimmed(line) == "!invite":
 			if r.endpoint == nil {
 				fmt.Println("-- no address to put on an invite yet")
 				continue
 			}
-			r.show(r.endpoint)
+			r.show(r.endpoint, nil)
 		case line != "":
 			r.room.Broadcast(line)
 		}
@@ -215,3 +333,5 @@ func (r *room) listMembers() {
 		fmt.Printf("   %-22s %s %s\n", member.Name, member.Health.Link, member.Addr)
 	}
 }
+
+func trimmed(line string) string { return strings.TrimSpace(line) }

@@ -31,16 +31,21 @@ type Chat struct {
 	setTyping func(bool)
 	command   func(string) bool
 	quit      chan struct{}
+
+	// typing is kept as a deadline per name rather than a flag, so a "stopped"
+	// that never arrives cannot leave somebody typing forever.
+	typing map[string]time.Time
 }
 
-func NewChat(terminal *Terminal, me, peer string) *Chat {
+func NewChat(terminal *Terminal, me string) *Chat {
 	width, height := terminal.Size()
 	return &Chat{
 		terminal: terminal,
 		screen:   NewScreen(width, height),
-		state:    State{Phase: PhaseLoading, Me: me, Peer: peer, Status: "starting"},
+		state:    State{Phase: PhaseLoading, Me: me, Status: "starting"},
 		events:   make(chan func(), 64),
 		quit:     make(chan struct{}),
+		typing:   map[string]time.Time{},
 	}
 }
 
@@ -89,23 +94,21 @@ func (c *Chat) SetProgress(progress float64) {
 	c.update(func(s *State) { s.Progress = progress })
 }
 
-// SetLink records what the transport reports about the path.
-func (c *Chat) SetLink(link LinkState, rtt, silence time.Duration) {
-	c.update(func(s *State) {
-		s.Link = link
-		s.RTT = rtt
-		s.Silence = silence
-	})
+// SetMembers replaces the roster. It is pushed rather than pulled because the
+// UI has no business knowing what a transport is, and polled by the caller
+// because liveness is a duration that grows on its own.
+func (c *Chat) SetMembers(members []Participant) {
+	c.update(func(s *State) { s.Members = members })
 }
 
 func (c *Chat) SetInvite(invite string) {
 	c.update(func(s *State) { s.Invite = invite })
 }
 
-func (c *Chat) Connected(me, peer string) {
+func (c *Chat) Connected(me string) {
 	c.update(func(s *State) {
 		s.Phase = PhaseChat
-		s.Me, s.Peer = me, peer
+		s.Me = me
 		s.Messages = append(s.Messages, Message{Speaker: "--", Body: "channel open", System: true})
 	})
 }
@@ -117,18 +120,29 @@ func (c *Chat) Closed(reason string) {
 	})
 }
 
-// Message and Typing satisfy the session observer.
-func (c *Chat) Message(payload string) {
+// Message adds a line from somebody. Every line names its speaker: a
+// conversation with more than two people in it has no default one.
+func (c *Chat) Message(from, payload string) {
 	c.update(func(s *State) {
-		s.PeerTyping = false
-		s.Messages = append(s.Messages, Message{Speaker: s.Peer, Body: payload})
+		delete(c.typing, from)
+		s.Messages = append(s.Messages, Message{Speaker: from, Body: payload})
 		keepPosition(s)
 	})
 }
 
-func (c *Chat) Typing(active bool) {
-	c.update(func(s *State) { s.PeerTyping = active })
+func (c *Chat) Typing(from string, active bool) {
+	c.update(func(*State) {
+		if active {
+			c.typing[from] = time.Now().Add(typingExpiry)
+			return
+		}
+		delete(c.typing, from)
+	})
 }
+
+// typingExpiry bounds how long somebody stays shown as typing without saying
+// so again. A "stopped" is one datagram and datagrams go missing.
+const typingExpiry = 6 * time.Second
 
 func (c *Chat) System(body string) {
 	c.update(func(s *State) {
@@ -203,6 +217,7 @@ func (c *Chat) Run(ctx context.Context) error {
 			c.state.Frame++
 			c.state.Input = c.editor.String()
 			c.state.Cursor = c.editor.Cursor()
+			c.applyTyping()
 			snapshot := c.state
 			c.mu.Unlock()
 
@@ -214,6 +229,20 @@ func (c *Chat) Run(ctx context.Context) error {
 	}
 }
 
+// applyTyping folds the typing deadlines into the roster the view draws.
+func (c *Chat) applyTyping() {
+	now := time.Now()
+	for name, until := range c.typing {
+		if now.After(until) {
+			delete(c.typing, name)
+		}
+	}
+	for i := range c.state.Members {
+		_, typing := c.typing[c.state.Members[i].Name]
+		c.state.Members[i].Typing = typing
+	}
+}
+
 // scroll moves the history window by half a screen, which keeps a couple of
 // lines of overlap so the eye can follow where it landed.
 func (c *Chat) scroll(kind KeyKind) {
@@ -222,7 +251,7 @@ func (c *Chat) scroll(kind KeyKind) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	step := (height - headerHeight - footerHeight) / 2
+	step := (height - headerRows(c.state, height) - footerHeight) / 2
 	if step < 1 {
 		step = 1
 	}

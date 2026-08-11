@@ -181,16 +181,23 @@ specific person and cannot be claimed by somebody else.
 **Rooms hold eight.** Past that it is a lot of connections for home routers to
 keep open, and quality falls off faster than the conversation improves.
 
-**Rooms are plain lines today.** The full-screen chat, the typing indicator and
-the `@` highlighting exist for the two-person version and have not been built
-for rooms yet. Everything underneath — the encryption, the direct connections,
-the names — is the finished part.
+**A room looks like the two-person chat, with a list.** Everyone present is
+shown down the right-hand side, each with their own connection health, because
+in a room the connections are separate: one person's can go bad while everyone
+else stays fine. The typing line names who is writing, and `@` highlighting
+works the same way it does with two.
+
+While you are the one waiting for the first person, the screen keeps showing
+your invite — that is the whole reason to be waiting. Once somebody arrives the
+chat takes over, and `!invite` brings the invite back whenever you need it.
 
 ### Room commands
 
 - **`!who`** lists who is present and whether each connection is healthy.
 - **`!invite`** prints a fresh invite to bring somebody in.
 - **`!exit`** leaves and tells everyone.
+- **`-plain`** turns off the full-screen interface here too, for the same
+  reason: when something goes wrong you want the output to stay on screen.
 
 ---
 
@@ -344,9 +351,13 @@ and carries on with the rest.
 
 ### When a connection failed
 
-Run with **`-plain`**. The full-screen chat erases itself when it closes, so a
-failed attempt leaves you with an empty screen and no clue. Plain mode leaves
-everything in your terminal.
+Run with **`-plain`** — it works on both `punch` and `room`. The full-screen
+chat erases itself when it closes, so a failed attempt leaves you with an empty
+screen and no clue. Plain mode leaves everything in your terminal.
+
+Either way, when a full-screen session ends without connecting it prints why,
+and the invite it was offering, after the screen is handed back — so a failed
+attempt is still something you can paste to someone.
 
 Closing the full-screen version also prints a short summary of what happened:
 whether a connection was ever made, why not, the invite you were offering, and

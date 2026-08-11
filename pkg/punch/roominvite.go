@@ -51,7 +51,7 @@ func ParseRoomInvite(line string) (RoomInvite, error) {
 		return RoomInvite{}, fmt.Errorf("%w: %q is empty", ErrNotRoomInvite, line)
 	}
 
-	endpointPart, blobPart, found := strings.Cut(fields[len(fields)-1], secretSeparator)
+	endpointPart, blobPart, found := strings.Cut(joinToken(fields), secretSeparator)
 	if !found {
 		return RoomInvite{}, fmt.Errorf("%w: %q carries no room", ErrNotRoomInvite, fields[len(fields)-1])
 	}

@@ -34,7 +34,7 @@ func runPunchUI(ctx context.Context, open *channel) error {
 	me := open.nicknames.For(open.role)
 	peer := open.nicknames.Other(open.role)
 
-	chat := tui.NewChat(terminal, me, peer)
+	chat := tui.NewChat(terminal, me)
 	chat.OnSend(open.session.SendMessage)
 	chat.OnTyping(open.session.SetTyping)
 	chat.OnCommand(func(line string) bool {
@@ -45,7 +45,10 @@ func runPunchUI(ctx context.Context, open *channel) error {
 		chat.Quit()
 		return true
 	})
-	open.session.Observe(chat)
+	// A session only ever has one peer, so it reports without saying who; the
+	// view names every line because a room has no default speaker. Putting the
+	// name back here is what lets both use the same view.
+	open.session.Observe(namedObserver{chat: chat, name: peer})
 
 	uiCtx, stopUI := context.WithCancel(ctx)
 	defer stopUI()
@@ -61,7 +64,7 @@ func runPunchUI(ctx context.Context, open *channel) error {
 			chat.Closed(err.Error())
 			return
 		}
-		chat.Connected(me, peer)
+		chat.Connected(me)
 		go pushHealth(uiCtx, open, chat)
 		if err := open.session.Run(uiCtx); err != nil {
 			chat.Closed(err.Error())
@@ -87,7 +90,12 @@ func pushHealth(ctx context.Context, open *channel, chat *tui.Chat) {
 			return
 		case <-ticker.C:
 			health := open.session.Health()
-			chat.SetLink(linkState(health.Link), health.RTT, health.Silence)
+			chat.SetMembers([]tui.Participant{{
+				Name:    open.nicknames.Other(open.role),
+				Link:    linkState(health.Link),
+				RTT:     health.RTT,
+				Silence: health.Silence,
+			}})
 		}
 	}
 }
@@ -164,3 +172,12 @@ func trackProgress(ctx context.Context, open *channel, chat *tui.Chat) {
 		}
 	}
 }
+
+// namedObserver adapts a two way session to a view that names every speaker.
+type namedObserver struct {
+	chat *tui.Chat
+	name string
+}
+
+func (o namedObserver) Message(payload string) { o.chat.Message(o.name, payload) }
+func (o namedObserver) Typing(active bool)     { o.chat.Typing(o.name, active) }

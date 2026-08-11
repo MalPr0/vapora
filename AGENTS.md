@@ -41,6 +41,11 @@ not the product and carries no compatibility promises.
 | `internal/tui` | The pixel art chat: screen, sprites, key decoding, raw mode |
 | `internal/chat` | Demo TCP chat for the UPnP path |
 
+`scripts/mesh-check.exp` drives three real rooms through pseudo-terminals with
+`expect`: keyboard in, screen out, chained invites. It is the only check that
+covers the keyboard and the full screen together, and it needs built binaries,
+so it is not part of `go test`.
+
 `pkg/` is the shared contract: high coverage is expected there, and a change to
 a signature is a change to the contract.
 
@@ -104,6 +109,14 @@ a signature is a change to the contract.
 - **Nothing but the UI writes to the terminal while it runs.** A `fmt.Print`
   buried in a package lands in the middle of whatever was drawn. Report through
   the observer instead.
+- **The header is not a fixed height.** A room lists everyone present, so the
+  chat area has to ask `headerRows(state, height)`; anything that measures
+  against a constant drops a line or paints over one as soon as a third person
+  joins. `minHeight` exists to keep that arithmetic solvable.
+- **Never truncate an invite on screen.** It is 95 characters, wider than a
+  terminal, and a cut invite looks copyable and decodes to nothing. The view
+  wraps it and `joinToken` puts it back together on paste — a wrapped invite
+  arriving by chat is the normal case, not the edge case.
 - **Ranging a string steps by bytes.** Every block glyph the sprites use is
   three of them, so pixel art must range `[]rune(line)`.
 - **No real addresses in the repository.** Use RFC 5737 documentation ranges

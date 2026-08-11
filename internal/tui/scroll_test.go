@@ -8,7 +8,7 @@ import (
 )
 
 func chatWith(count int, scroll int) State {
-	state := State{Phase: PhaseChat, Me: "OTTER", Peer: "BADGER", Scroll: scroll}
+	state := State{Phase: PhaseChat, Me: "OTTER", Members: only("BADGER"), Scroll: scroll}
 	for i := 0; i < count; i++ {
 		state.Messages = append(state.Messages, Message{Speaker: "BADGER", Body: fmt.Sprintf("line-%02d", i)})
 	}
@@ -20,7 +20,7 @@ func chatWith(count int, scroll int) State {
 func TestMessagesAreAnchoredToTheBottom(t *testing.T) {
 	screen := drawState(State{
 		Phase:    PhaseChat,
-		Peer:     "BADGER",
+		Members:  only("BADGER"),
 		Messages: []Message{{Speaker: "BADGER", Body: "solo"}},
 	})
 
@@ -80,10 +80,11 @@ func TestScrollMarkerCountsWhatIsHidden(t *testing.T) {
 // blocks came out unreadable. Half block pixels are what keeps it square.
 func TestBannerIsDrawnAsHalfBlockPixels(t *testing.T) {
 	screen := NewScreen(80, 24)
-	Draw(screen, State{Phase: PhaseChat})
+	state := State{Phase: PhaseChat}
+	Draw(screen, state)
 
 	halves, wholes := 0, 0
-	for y := 0; y < headerHeight; y++ {
+	for y := 0; y < headerRows(state, 24); y++ {
 		for x := 0; x < 80; x++ {
 			switch screen.At(x, y).Rune {
 			case upperHalf:
@@ -126,14 +127,14 @@ func TestPageKeysDecode(t *testing.T) {
 
 // A healthy path says almost nothing; the badge exists for when it stops.
 func TestLinkBadgeOnlySpeaksWhenSomethingIsWrong(t *testing.T) {
-	alive := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkAlive}))
+	alive := plain(drawState(State{Phase: PhaseChat, Members: only("BADGER")}))
 	if strings.Contains(alive, "LINK LOST") || strings.Contains(alive, "no reply") {
 		t.Fatalf("a healthy link raised an alarm:\n%s", alive)
 	}
 
-	stale := plain(drawState(State{
-		Phase: PhaseChat, Peer: "BADGER", Link: LinkStale, Silence: 14 * time.Second,
-	}))
+	stale := plain(drawState(State{Phase: PhaseChat, Members: []Participant{
+		{Name: "BADGER", Link: LinkStale, Silence: 14 * time.Second},
+	}}))
 	if !strings.Contains(stale, "no reply 14s") {
 		t.Fatalf("a stale link did not report its silence:\n%s", stale)
 	}
@@ -141,7 +142,7 @@ func TestLinkBadgeOnlySpeaksWhenSomethingIsWrong(t *testing.T) {
 		t.Fatal("a stale link kept the healthy marker")
 	}
 
-	lost := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 0}))
+	lost := plain(drawState(State{Phase: PhaseChat, Members: lostAt(0)}))
 	if !strings.Contains(lost, "LINK LOST") || !strings.Contains(lost, "○") {
 		t.Fatalf("a lost link did not say so:\n%s", lost)
 	}
@@ -150,17 +151,17 @@ func TestLinkBadgeOnlySpeaksWhenSomethingIsWrong(t *testing.T) {
 // The lost badge blinks, which is the one signal a console can give that the
 // eye catches without moving.
 func TestLostLinkBlinks(t *testing.T) {
-	on := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 0}))
-	off := plain(drawState(State{Phase: PhaseChat, Peer: "BADGER", Link: LinkLost, Frame: 5}))
+	on := plain(drawState(State{Phase: PhaseChat, Members: lostAt(0), Frame: 0}))
+	off := plain(drawState(State{Phase: PhaseChat, Members: lostAt(0), Frame: 5}))
 	if on == off {
 		t.Fatal("the lost badge did not blink")
 	}
 }
 
 func TestRoundTripIsShownWhenKnown(t *testing.T) {
-	frame := plain(drawState(State{
-		Phase: PhaseChat, Peer: "BADGER", Link: LinkAlive, RTT: 42 * time.Millisecond,
-	}))
+	frame := plain(drawState(State{Phase: PhaseChat, Members: []Participant{
+		{Name: "BADGER", Link: LinkAlive, RTT: 42 * time.Millisecond},
+	}}))
 	if !strings.Contains(frame, "42ms") {
 		t.Fatalf("the round trip is not shown:\n%s", frame)
 	}

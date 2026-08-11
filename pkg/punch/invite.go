@@ -36,7 +36,7 @@ func ParseInvite(line string) (Invite, error) {
 		return Invite{}, fmt.Errorf("punch: %q carries no endpoint", line)
 	}
 
-	token := fields[len(fields)-1]
+	token := joinToken(fields)
 	endpointPart, secretPart, hasSecret := strings.Cut(token, secretSeparator)
 
 	endpoint, err := net.ResolveUDPAddr("udp4", endpointPart)
@@ -56,4 +56,26 @@ func ParseInvite(line string) (Invite, error) {
 		invite.Secret = secret
 	}
 	return invite, nil
+}
+
+// joinToken puts back together a token a terminal wrapped. An invite is longer
+// than 80 columns, so it reaches the other side split across lines as often as
+// not, and a paste that decodes to half a key is the worst possible failure:
+// it looks like a typo in a random string nobody can proofread.
+//
+// Nothing legitimate follows the token, so everything from the field carrying
+// the separator onwards belongs to it.
+func joinToken(fields []string) string {
+	for i, field := range fields {
+		// A path in the command that runs this also holds separators, so the
+		// endpoint in front of it is what tells a token from `./cmd/vapora`.
+		if endpoint, _, found := strings.Cut(field, secretSeparator); found &&
+			strings.Contains(endpoint, ":") {
+			return strings.Join(fields[i:], "")
+		}
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
 }

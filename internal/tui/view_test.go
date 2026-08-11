@@ -33,9 +33,9 @@ func drawState(state State) *Screen {
 
 func TestChatShowsSpeakersAndMessages(t *testing.T) {
 	frame := plain(drawState(State{
-		Phase: PhaseChat,
-		Me:    "OTTER",
-		Peer:  "BADGER",
+		Phase:   PhaseChat,
+		Me:      "OTTER",
+		Members: only("BADGER"),
 		Messages: []Message{
 			{Speaker: "BADGER", Body: "hola"},
 			{Speaker: "OTTER", Body: "todo bien", Mine: true},
@@ -51,12 +51,12 @@ func TestChatShowsSpeakersAndMessages(t *testing.T) {
 }
 
 func TestTypingIndicatorAppearsOnlyWhileTyping(t *testing.T) {
-	quiet := plain(drawState(State{Phase: PhaseChat, Me: "OTTER", Peer: "BADGER"}))
+	quiet := plain(drawState(State{Phase: PhaseChat, Me: "OTTER", Members: only("BADGER")}))
 	if strings.Contains(quiet, "is typing") {
 		t.Fatalf("a quiet peer must not show the indicator:\n%s", quiet)
 	}
 
-	typing := plain(drawState(State{Phase: PhaseChat, Me: "OTTER", Peer: "BADGER", PeerTyping: true}))
+	typing := plain(drawState(State{Phase: PhaseChat, Me: "OTTER", Members: typingNow("BADGER")}))
 	if !strings.Contains(typing, "BADGER is typing") {
 		t.Fatalf("frame is missing the indicator:\n%s", typing)
 	}
@@ -70,7 +70,7 @@ func TestTypingIndicatorAppearsOnlyWhileTyping(t *testing.T) {
 func TestRunnerAnimates(t *testing.T) {
 	seen := map[string]bool{}
 	for frame := 0; frame < len(runnerFrames); frame++ {
-		screen := drawState(State{Phase: PhaseChat, Peer: "BADGER", PeerTyping: true, Frame: frame})
+		screen := drawState(State{Phase: PhaseChat, Members: typingNow("BADGER"), Frame: frame})
 		seen[plain(screen)] = true
 	}
 	if len(seen) < 2 {
@@ -107,7 +107,7 @@ func TestLoadingProgressMovesTheRunner(t *testing.T) {
 func TestMessagesAreSanitisedBeforeDrawing(t *testing.T) {
 	screen := drawState(State{
 		Phase:    PhaseChat,
-		Peer:     "BADGER",
+		Members:  only("BADGER"),
 		Messages: []Message{{Speaker: "BADGER", Body: "hola\x1b[2Jchau"}},
 	})
 
@@ -125,7 +125,7 @@ func TestLongMessagesWrapUnderTheSpeaker(t *testing.T) {
 	long := strings.Repeat("palabra ", 40)
 	frame := plain(drawState(State{
 		Phase:    PhaseChat,
-		Peer:     "BADGER",
+		Members:  only("BADGER"),
 		Messages: []Message{{Speaker: "BADGER", Body: long}},
 	}))
 
@@ -142,7 +142,7 @@ func TestLongMessagesWrapUnderTheSpeaker(t *testing.T) {
 // The courier is drawn in pixel space, where it is easy to make it taller than
 // the band it lives in and have it paint over the hint or the input line.
 func TestTypingSpriteStaysInsideItsBand(t *testing.T) {
-	screen := drawState(State{Phase: PhaseChat, Peer: "BADGER", PeerTyping: true, Input: "hola", Frame: 1})
+	screen := drawState(State{Phase: PhaseChat, Members: typingNow("BADGER"), Input: "hola", Frame: 1})
 	width, height := screen.Size()
 
 	for x := 0; x < width; x++ {
@@ -272,12 +272,6 @@ func TestLoadingFitsAtEverySize(t *testing.T) {
 			}
 			if invite != "" && !strings.Contains(plain(screen), "203.0.113.7:41001/ABC") {
 				t.Fatalf("at %dx%d the invite was pushed off screen:\n%s", size[0], size[1], plain(screen))
-			}
-			// Nothing may paint over the wordmark.
-			for x := 0; x < size[0]; x++ {
-				for y := headerHeight; y < headerHeight+1; y++ {
-					_ = y
-				}
 			}
 		}
 	}

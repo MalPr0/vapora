@@ -46,7 +46,7 @@ func TestNoInkVanishesIntoTheBackground(t *testing.T) {
 // that scrolls past, and it has to be findable without relying on colour alone.
 func TestMentionsAreMarkedAndTinted(t *testing.T) {
 	plainState := State{
-		Phase: PhaseChat, Me: "CRIMSON OTTER", Peer: "JADE BADGER",
+		Phase: PhaseChat, Me: "CRIMSON OTTER", Members: only("JADE BADGER"),
 		Messages: []Message{{Speaker: "JADE BADGER", Body: "hola a todos"}},
 	}
 	if strings.Contains(plain(drawState(plainState)), MentionMark) {
