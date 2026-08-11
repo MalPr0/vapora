@@ -212,6 +212,23 @@ Everyone runs `./vapora nat`, sends the short profile it prints, and one of you
 puts them all in that command. It says whether the room closes, who should open
 it, and — if some pair cannot reach each other at all — exactly which pair.
 
+### Finding each other without an address
+
+There is one more way in, and it is off by default:
+
+```bash
+./vapora room -discover
+```
+
+With `-discover`, both sides also publish themselves on the **BitTorrent DHT** —
+the same network torrent clients use to find each other — under a name derived
+from your invite's secret. Each side looks the other up and starts punching at
+whatever it finds. Nobody hosts it, nothing is paid for, and it keeps working
+when your address changes mid-conversation.
+
+**Read section 7 before using it.** It puts your address on a public network,
+which is the one thing the rest of this tool goes out of its way not to do.
+
 ### Room commands
 
 - **`!who`** lists who is present and whether each connection is healthy.
@@ -428,6 +445,30 @@ whatsoever. Someone scanning for open ports gets exactly what they would get
 from a closed one, so scanning tells them nothing. It is counted, though, and
 you are told, because it means somebody found an address that should only have
 been on one invite.
+
+### What `-discover` costs
+
+Everything above assumes your address only reaches the person you sent it to.
+`-discover` breaks that assumption on purpose, so it is off unless you ask.
+
+**What is published:** your IP address and the port, under a 20-byte name
+derived from your secret. The derivation only runs one way, so somebody
+watching cannot work back to the secret and cannot read anything.
+
+**What that means:** you cannot be found by someone who does not have your
+secret — they would not know what to look up. But you become one more address
+in a public table, and anyone crawling that whole network sees an address there
+without knowing whose or what for.
+
+**What comes back is not trustworthy.** That network has nodes that answer
+every query with addresses nobody ever announced, including ones that copy the
+port you just announced. vapora treats an address from there as a place to try
+and nothing more: only a frame under the secret makes anybody a participant.
+
+**Bootstrapping is the centralised part.** Entering the network requires
+knowing a node already, so it starts from three fixed addresses that every
+torrent client ships with. Same kind of dependency as the STUN servers in
+section 5, and it fails the same way.
 
 ### What "no account" means, and what it does not
 

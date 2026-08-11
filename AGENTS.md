@@ -39,6 +39,7 @@ not the product and carries no compatibility promises.
 | `pkg/diag` | The differential experiment attributing filtering to a router |
 | `pkg/text` | Sanitiser for anything from the network headed to a terminal |
 | `internal/tui` | The pixel art chat: screen, sprites, key decoding, raw mode |
+| `pkg/dht` | Bencode and a mainline DHT client: announce and lookup, no serving |
 | `internal/chat` | Demo TCP chat for the UPnP path |
 
 `scripts/mesh-check.exp` drives three real rooms through pseudo-terminals with
@@ -117,6 +118,16 @@ a signature is a change to the contract.
   terminal, and a cut invite looks copyable and decodes to nothing. The view
   wraps it and `joinToken` puts it back together on paste — a wrapped invite
   arriving by chat is the normal case, not the edge case.
+- **Nothing the DHT returns is trusted.** That network has nodes answering every
+  key with addresses nobody announced, including ones that mirror the port just
+  announced — both were seen while testing this. An address from there is a
+  place to try, bounded and deduplicated, never a participant.
+- **The DHT client answers no queries.** Serving strangers from the socket the
+  conversation runs on is a much larger surface for nothing this needs, so a
+  query addressed to it falls through as somebody else's problem.
+- **An announcement nobody accepted is not an announcement.** Nodes answering is
+  not the same as nodes taking the announcement, and reporting the first as
+  success is how a rendezvous appears to work and never meets anyone.
 - **A room only ever answers a hello.** Nothing is sent to an address the room
   has not heard from, so between two networks that both refuse a first packet
   from a stranger the newcomer's hello dies at the host's door and waiting

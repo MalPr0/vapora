@@ -32,7 +32,10 @@ type room struct {
 	timeout   time.Duration
 	endpoint  *net.UDPAddr
 
+	meeting *punch.Rendezvous
+
 	mu     sync.Mutex
+	tried  map[string]bool
 	shared string
 	failed string
 	joined bool
@@ -45,6 +48,8 @@ func runRoom(args []string) error {
 	keepalive := flags.Duration("keepalive", stun.DefaultKeepalive, "how often to refresh the NAT binding")
 	advertise := flags.String("advertise", "", "put this address on invites instead of the one STUN reports")
 	plain := flags.Bool("plain", false, "skip the full screen UI and use plain lines")
+	discover := flags.Bool("discover", false,
+		"also find each other through the BitTorrent DHT. Publishes your address on a public network")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -82,7 +87,19 @@ func runRoom(args []string) error {
 		return err
 	}
 
-	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining, timeout: *timeout, advertise: *advertise}
+	open := &room{conn: conn, mux: mux, room: party, watcher: watcher, joining: joining,
+		timeout: *timeout, advertise: *advertise}
+
+	if *discover {
+		meeting, err := punch.NewRendezvous(mux, secret, conn.LocalAddr().(*net.UDPAddr).Port)
+		if err != nil {
+			return err
+		}
+		// The room greets first and only claims what opens under its key, so a
+		// DHT reply falls through to here rather than being swallowed.
+		mux.Fallback(punch.SinkFunc(meeting.Deliver))
+		open.meeting = meeting
+	}
 
 	go mux.Run(ctx)
 	go watcher.Run(ctx, conn)
@@ -102,6 +119,7 @@ func runRoom(args []string) error {
 func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
 	r.room.Observe(r)
 	go r.announce(ctx, r.advertise, nil)
+	go r.meet(ctx, func(line string) { fmt.Println("--", line) })
 
 	if r.joining != nil {
 		fmt.Printf("\njoining the room at %s\n", r.joining.Endpoint)
@@ -141,6 +159,7 @@ func (r *room) runPlain(ctx context.Context, quit context.CancelFunc) error {
 func (r *room) connect(ctx context.Context, chat *tui.Chat) error {
 	chat.SetStatus("looking up your public endpoint", 0.05)
 	go r.announce(ctx, r.advertise, chat)
+	go r.meet(ctx, chat.System)
 
 	if r.joining == nil {
 		// The invite is only on the waiting screen, and it is the whole point of
@@ -267,6 +286,55 @@ func (r *room) offerWayBack(ctx context.Context, chat *tui.Chat) {
 	}
 	chat.SetInvite("if it stalls, send this back for them to paste: " + endpoint.String())
 }
+
+// meet runs the DHT side of finding each other: it publishes this address under
+// the secret and punches towards whatever else is published there.
+//
+// Both sides do exactly this, which is what makes it work without either of
+// them knowing an address first — and it is also the standoff fix, since both
+// end up sending at the same time.
+func (r *room) meet(ctx context.Context, say func(string)) {
+	if r.meeting == nil {
+		return
+	}
+
+	err := r.meeting.Publish(ctx, func(peers []*net.UDPAddr) {
+		for _, peer := range r.worthTrying(peers) {
+			say("found an address on the DHT: " + peer.String())
+			r.room.Reach(ctx, peer)
+		}
+	})
+	if err != nil && ctx.Err() == nil {
+		say("the DHT is not reachable from here: " + err.Error())
+	}
+}
+
+// worthTrying filters what the DHT handed back. Nothing there is trustworthy —
+// there are nodes that answer every key with whatever addresses they like — so
+// this bounds how much traffic a lie can cost: each address is punched at once,
+// and only a few of them, because every one of them is a stranger who never
+// asked to hear from us.
+func (r *room) worthTrying(peers []*net.UDPAddr) []*net.UDPAddr {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.tried == nil {
+		r.tried = map[string]bool{}
+	}
+
+	var fresh []*net.UDPAddr
+	for _, peer := range peers {
+		if len(fresh) == maxDHTPeers || r.tried[peer.String()] {
+			continue
+		}
+		r.tried[peer.String()] = true
+		fresh = append(fresh, peer)
+	}
+	return fresh
+}
+
+// maxDHTPeers is how many unverified addresses are worth a packet per round.
+const maxDHTPeers = 4
 
 // waitForCompany holds the host on the waiting screen until the first member
 // authenticates. Membership is a poll like everything else here: nothing
