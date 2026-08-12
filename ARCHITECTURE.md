@@ -9,6 +9,8 @@
        ▀▀▀  ▀   ▀     ▀   ▀   ▀ ▀▀▀▀▀ ▀▀▀▀
 ```
 
+**English** · [Español](ARCHITECTURE.es.md)
+
 **How the channel is built, and how to use it for something that is not a chat.**
 
 ← [back to the README](README.md)

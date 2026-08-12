@@ -8,6 +8,8 @@
     ██      ██      ██  ██            ██████    ██      ██  ██      ██
 ```
 
+**English** · [Español](README.es.md)
+
 ### Chat straight from your computer to theirs. No server. No account. No trace.
 
 You share one line of text. They paste it. You are talking — encrypted,
@@ -278,9 +280,12 @@ Honest limitations, not fine print.
 
 ## How you can use this
 
-The chat is one thing built on the channel. Here is another, in forty lines:
-two copies of this program, on two machines anywhere on the internet, sending
-each other bytes with nothing in between.
+The chat is one thing built on the channel, not the point of it. The transport
+is a separate layer with no idea what a conversation is: it opens an encrypted
+path through two routers, keeps a mesh alive, and moves **bytes**.
+
+Forty lines is a working program — two copies of it, on two machines anywhere
+on the internet, sending each other bytes with nothing in between:
 
 ```go
 conn, _ := net.ListenUDP("udp4", &net.UDPAddr{})
@@ -317,7 +322,7 @@ what, and why a game survives packet loss that would ruin a conversation.
   w/s moves · r resets · 47ms · q quits        powered by vapora
 ```
 
-### The three, side by side
+### Three things on one channel
 
 | | Sends | Cares about |
 |---|---|---|
@@ -330,21 +335,7 @@ freshness against delivery — and neither needed the transport to change. That 
 the clearest evidence the layering is real, and it is why building on it does
 not mean inheriting anybody else's decisions.
 
----
-
-## Use it for something else
-
-The chat is one thing built on the channel, not the point of it. The transport
-is a separate layer with no idea what a conversation is: it opens an encrypted
-path through two routers, keeps a mesh alive, and moves **bytes**.
-
-```go
-session := punch.NewSession(mux, codec, nil)
-session.Observe(punch.ObserverFunc(func(payload []byte) {
-    // whatever you put in is what you get out
-}))
-session.Send([]byte{...})
-```
+### The packages
 
 | Package | What it gives you |
 |---|---|
@@ -359,10 +350,6 @@ session.Send([]byte{...})
 **→ [ARCHITECTURE.md](ARCHITECTURE.md) walks the whole thing**: how a path is
 opened step by step, what the wire looks like, how the mesh keys itself, and a
 recipe for building on it. Diagrams, not prose.
-
-[`examples/filedrop`](examples/filedrop) is the proof it is a real separation:
-it moves a file between two machines with no chat, no nicknames and no terminal,
-and nothing in the transport had to change to allow it.
 
 ---
 
