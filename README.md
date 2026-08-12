@@ -378,6 +378,9 @@ go test ./... -race
 
 Go 1.25. Nothing to fetch, nothing to configure.
 
+Every exported declaration in `pkg/` is documented, and the check is in the
+repo: `go run ./internal/doclint pkg`.
+
 **Layout, if you want to read it.** `pkg/punch` is the handshake, sessions and
 rooms. `pkg/stun` learns your address and classifies your NAT. `pkg/upnp` and
 `pkg/pcp` ask routers to open doors. `pkg/dht` is the BitTorrent client.

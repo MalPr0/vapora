@@ -76,6 +76,14 @@ and that separation is load-bearing rather than tidy:
   program on that page was extracted from the markdown, compiled, and run
   between two processes. A tutorial whose first snippet does not work loses the
   reader on the first step, and that is the snippet most likely to rot.
+- **Every exported declaration in `pkg/` has a doc comment**, checked by
+  `go run ./internal/doclint pkg`. These packages are meant to be imported, and
+  an undocumented surface is a list of names on pkg.go.dev.
+- **Protocol packages are tested against a server this side writes.** A router
+  or a STUN server is the one thing a test cannot have, and it is also where
+  everything has actually gone wrong: descriptions nested three deep, gateways
+  granting a different port than asked for, servers answering the wrong opcode.
+  `pkg/upnp`, `pkg/stun` and `pkg/pcp` each stand one up.
 - **Documentation that shows code is checked by the compiler.** Every snippet in
   `ARCHITECTURE.md` lives in `examples/apitour`, so a signature change breaks the
   build rather than leaving a page that quietly lies. Two snippets were wrong the

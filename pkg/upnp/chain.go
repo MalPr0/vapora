@@ -134,9 +134,13 @@ func isCarrierGrade(address string) bool {
 	return ip != nil && carrierGradeNAT.Contains(ip)
 }
 
-// GuessUpstream assumes the upstream router owns the .1 address of the subnet
-// the current gateway got its WAN address from, which is the usual layout of a
-// modem plus router cascade.
+// GuessUpstream names the router one layer further out, assuming it owns the
+// .1 address of the subnet this gateway got its WAN address from — the usual
+// layout of a modem plus router cascade.
+//
+// It returns nothing unless the address is private, because an upstream only
+// exists behind NAT. Guessing from a public address would point a search at a
+// stranger's machine.
 func GuessUpstream(externalIP string) string {
 	return guessUpstream(externalIP)
 }
@@ -144,6 +148,13 @@ func GuessUpstream(externalIP string) string {
 func guessUpstream(externalIP string) string {
 	ip := net.ParseIP(externalIP).To4()
 	if ip == nil {
+		return ""
+	}
+	// An upstream router only exists behind NAT. Guessing one from a public
+	// address would send a search to somebody else's machine on the internet,
+	// which is both useless and rude — and is what happened when this was
+	// called from outside the one place that checked first.
+	if !isPrivate(externalIP) {
 		return ""
 	}
 	candidate := net.IPv4(ip[0], ip[1], ip[2], 1)
