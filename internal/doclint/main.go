@@ -90,8 +90,15 @@ func main() {
 		sort.Strings(missing[pkg])
 		fmt.Printf("%-14s %d undocumented: %s\n", pkg, len(missing[pkg]), strings.Join(missing[pkg], ", "))
 	}
-	fmt.Printf("\n%d of %d exported declarations documented (%.0f%%)\n",
-		documented, total, float64(documented)*100/float64(total))
+
+	if documented != total {
+		fmt.Printf("\n%d of %d exported declarations documented (%.0f%%)\n",
+			documented, total, float64(documented)*100/float64(total))
+		// Failing is the point: these packages are meant to be imported, and an
+		// undocumented surface is a list of names on pkg.go.dev.
+		os.Exit(1)
+	}
+	fmt.Printf("%d exported declarations, all documented\n", total)
 }
 
 func receiver(expr ast.Expr) string {

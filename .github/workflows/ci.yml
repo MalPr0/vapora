@@ -38,6 +38,15 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # These two check the things that rot without anybody noticing: a package
+      # meant to be imported losing its documentation, and a translated page
+      # quietly pointing somewhere that no longer exists.
+      - name: Documented public surface
+        run: go run ./internal/doclint pkg
+
+      - name: Documentation links
+        run: go run ./internal/linklint
+
       - name: Test
         run: go test ./... -race -count=1
 
