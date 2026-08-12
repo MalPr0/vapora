@@ -8,7 +8,7 @@
     ██      ██      ██  ██            ██████    ██      ██  ██      ██
 ```
 
-**English** · [Español](README.es.md)
+**English** · [Español](docs/es/README.md) · [中文](docs/zh/README.md) · [日本語](docs/ja/README.md) · [Português](docs/pt/README.md) · [العربية](docs/ar/README.md) · [Français](docs/fr/README.md) · [Italiano](docs/it/README.md) · [Deutsch](docs/de/README.md) · [Русский](docs/ru/README.md)
 
 ### Chat straight from your computer to theirs. No server. No account. No trace.
 

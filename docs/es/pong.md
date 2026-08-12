@@ -7,13 +7,13 @@
      ▀▀▀ p o w e r e d   b y   v a p o r a ▀▀▀
 ```
 
-[English](README.md) · **Español**
+[English](../../examples/pong/README.md) · **Español**
 
 **Dos jugadores. Dos casas. Sin servidor.** Un tutorial de 200 líneas que
 construye un juego real sobre `pkg/punch`, y de paso muestra el transporte usado
 para algo que no se parece en nada a un chat.
 
-← [volver al README](../../README.es.md) · [el recorrido del transporte](../../ARCHITECTURE.es.md)
+← [volver al README](README.md) · [el recorrido del transporte](ARCHITECTURE.md)
 
 ---
 
@@ -450,14 +450,14 @@ Las partes de esto que no son sobre Pong:
 
 | | |
 |---|---|
-| [`main.go`](main.go) | La configuración de red, y la única parte sobre internet |
-| [`wire.go`](wire.go) | El protocolo: tres etiquetas y once bytes |
-| [`game.go`](game.go) | Las reglas, que corren solo en el host |
-| [`play.go`](play.go) | El bucle, idéntico en los dos lados |
-| [`screen.go`](screen.go) | Dibujo con medio bloque |
-| [`splash.go`](splash.go) | Los wordmarks |
-| [`keys.go`](keys.go) | Modo raw, unas treinta líneas de termios |
-| [`pong_test.go`](pong_test.go) | Las verificaciones de la tabla de arriba |
+| [`main.go`](../../examples/pong/main.go) | La configuración de red, y la única parte sobre internet |
+| [`wire.go`](../../examples/pong/wire.go) | El protocolo: tres etiquetas y once bytes |
+| [`game.go`](../../examples/pong/game.go) | Las reglas, que corren solo en el host |
+| [`play.go`](../../examples/pong/play.go) | El bucle, idéntico en los dos lados |
+| [`screen.go`](../../examples/pong/screen.go) | Dibujo con medio bloque |
+| [`splash.go`](../../examples/pong/splash.go) | Los wordmarks |
+| [`keys.go`](../../examples/pong/keys.go) | Modo raw, unas treinta líneas de termios |
+| [`pong_test.go`](../../examples/pong/pong_test.go) | Las verificaciones de la tabla de arriba |
 
 ---
 

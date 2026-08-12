@@ -8,7 +8,7 @@
     ██      ██      ██  ██            ██████    ██      ██  ██      ██
 ```
 
-[English](README.md) · **Español**
+[English](../../README.md) · **Español** · [中文](../zh/README.md) · [日本語](../ja/README.md) · [Português](../pt/README.md) · [العربية](../ar/README.md) · [Français](../fr/README.md) · [Italiano](../it/README.md) · [Deutsch](../de/README.md) · [Русский](../ru/README.md)
 
 ### Hablá directo de tu computadora a la suya. Sin servidor. Sin cuenta. Sin rastro.
 
@@ -178,7 +178,7 @@ agujeros se alinean. Después de eso el camino es directo y no hay nadie más en
 Todo con la biblioteca estándar de Go. Nada de código de terceros, en ningún
 lado.
 
-<sup><a href="ARCHITECTURE.es.md">ARCHITECTURE.es.md</a> tiene el paso a paso, con diagramas.</sup>
+<sup><a href="ARCHITECTURE.md">ARCHITECTURE.md</a> tiene el paso a paso, con diagramas.</sup>
 
 ---
 
@@ -311,7 +311,7 @@ session.Open(ctx, 3*time.Minute)             // perfora los dos routers
 session.Send([]byte("hola"))
 ```
 
-### 🏓 Empezá por acá: [**construí un Pong**](examples/pong/README.es.md)
+### 🏓 Empezá por acá: [**construí un Pong**](pong.md)
 
 Un tutorial paso a paso que va de ese esqueleto a un juego real de dos jugadores
 a través de internet — su propio formato en la red, quién tiene derecho a tener
@@ -332,8 +332,8 @@ arruinaría una conversación.
 
 | | Manda | Le importa |
 |---|---|---|
-| **[Pong](examples/pong/README.es.md)** — tutorial | **estado**, 30 veces por segundo | solo el más nuevo. Un paquete perdido cuesta un cuadro |
-| **[filedrop](examples/filedrop)** | **bloques** de un archivo | todos, y en el lugar correcto |
+| **[Pong](pong.md)** — tutorial | **estado**, 30 veces por segundo | solo el más nuevo. Un paquete perdido cuesta un cuadro |
+| **[filedrop](../../examples/filedrop)** | **bloques** de un archivo | todos, y en el lugar correcto |
 | **`vapora punch` / `room`** | **eventos** — líneas de texto | cada una de ellas |
 
 Un juego y una conversación quieren cosas opuestas del mismo transporte —
@@ -353,7 +353,7 @@ la que construir encima no significa heredar las decisiones de otro.
 | `pkg/names` | Una clave convertida en un nombre que una persona puede decir. |
 | `pkg/chat` | Líneas, tipeo y hablantes — la capa que usa la interfaz de este programa. |
 
-**→ [ARCHITECTURE.es.md](ARCHITECTURE.es.md) recorre todo**: cómo se abre un
+**→ [ARCHITECTURE.md](ARCHITECTURE.md) recorre todo**: cómo se abre un
 camino paso a paso, cómo se ve el formato en la red, cómo la malla se genera sus
 propias claves, y una receta para construir encima. Diagramas, no prosa.
 
@@ -380,8 +380,8 @@ y las salas. `pkg/stun` averigua tu dirección y clasifica tu NAT. `pkg/upnp` y
 BitTorrent. `pkg/diag` es el razonamiento detrás de los consejos. `internal/tui`
 es el chat en pixel art.
 
-[`ARCHITECTURE.es.md`](ARCHITECTURE.es.md) es el recorrido guiado de todo.
-[`AGENTS.md`](AGENTS.md) documenta las invariantes — las cosas que parecen
+[`ARCHITECTURE.md`](ARCHITECTURE.md) es el recorrido guiado de todo.
+[`AGENTS.md`](../../AGENTS.md) documenta las invariantes — las cosas que parecen
 detalles y terminan sosteniendo el edificio. Ese está solo en inglés, porque es
 la referencia de trabajo del código.
 

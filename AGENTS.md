@@ -84,14 +84,19 @@ and that separation is load-bearing rather than tidy:
   everything has actually gone wrong: descriptions nested three deep, gateways
   granting a different port than asked for, servers answering the wrong opcode.
   `pkg/upnp`, `pkg/stun` and `pkg/pcp` each stand one up.
-- **The community-facing pages exist in two languages and must not leak.** A
-  reader who chose Spanish stays in Spanish: `README.es.md` links
-  `ARCHITECTURE.es.md`, which links `examples/pong/README.es.md`. The language
-  selector is the one link that crosses on purpose. `go run ./internal/linklint`
-  checks both halves — that every relative link resolves, and that a translated
-  page does not drop somebody back into English.
+- **Translations live under `docs/<lang>/`,** so the repository root stays
+  readable with ten languages. Inside a language the links between pages are
+  plain filenames, which is what keeps a reader who chose one from being dropped
+  into another.
+- **A selector must offer exactly what exists.** The README is translated into
+  all ten; ARCHITECTURE and the Pong tutorial only into Spanish, because they
+  are for somebody already reading the code and the code is English. Offering a
+  language that is not there is a broken link; leaving one out hides work
+  somebody did. `go run ./internal/linklint` checks that, that every relative
+  link resolves, and that a translated page links English only where no
+  translation exists.
   AGENTS.md is deliberately English only: it is the working reference for the
-  code, and the code is English.
+  code.
 - **Documentation that shows code is checked by the compiler.** Every snippet in
   `ARCHITECTURE.md` lives in `examples/apitour`, so a signature change breaks the
   build rather than leaving a page that quietly lies. Two snippets were wrong the

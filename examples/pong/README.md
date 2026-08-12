@@ -7,7 +7,7 @@
      ▀▀▀ p o w e r e d   b y   v a p o r a ▀▀▀
 ```
 
-**English** · [Español](README.es.md)
+**English** · [Español](../../docs/es/pong.md)
 
 **Two players. Two houses. No server.** A 200-line tutorial that builds a real
 game on `pkg/punch`, and in doing so shows the transport being used for

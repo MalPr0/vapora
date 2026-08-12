@@ -9,11 +9,11 @@
        ▀▀▀  ▀   ▀     ▀   ▀   ▀ ▀▀▀▀▀ ▀▀▀▀
 ```
 
-[English](ARCHITECTURE.md) · **Español**
+[English](../../ARCHITECTURE.md) · **Español**
 
 **Cómo se construye el canal, y cómo usarlo para algo que no es un chat.**
 
-← [volver al README](README.es.md)
+← [volver al README](README.md)
 
 ---
 
@@ -447,12 +447,12 @@ qué significan tus bytes:
 
 | | |
 |---|---|
-| [`examples/pong`](examples/pong/README.es.md) | El tutorial: de este esqueleto a un juego real |
-| [`examples/filedrop`](examples/filedrop) | Todo en un archivo, moviendo un archivo sin chat |
-| [`examples/apitour`](examples/apitour) | Cada snippet de esta página, en un archivo que el compilador verifica |
-| [`pkg/chat`](pkg/chat) | Un consumidor que vale la pena copiar: sus propias etiquetas, adentro del payload |
-| [`AGENTS.md`](AGENTS.md) | Las invariantes — los detalles que terminan sosteniendo el edificio (en inglés) |
-| [`README.es.md`](README.es.md) | Para qué sirve, si llegaste acá primero |
+| [`examples/pong`](pong.md) | El tutorial: de este esqueleto a un juego real |
+| [`examples/filedrop`](../../examples/filedrop) | Todo en un archivo, moviendo un archivo sin chat |
+| [`examples/apitour`](../../examples/apitour) | Cada snippet de esta página, en un archivo que el compilador verifica |
+| [`pkg/chat`](../../pkg/chat) | Un consumidor que vale la pena copiar: sus propias etiquetas, adentro del payload |
+| [`AGENTS.md`](../../AGENTS.md) | Las invariantes — los detalles que terminan sosteniendo el edificio (en inglés) |
+| [`README.es.md`](README.md) | Para qué sirve, si llegaste acá primero |
 
 ---
 
