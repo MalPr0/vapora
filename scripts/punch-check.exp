@@ -1,0 +1,20 @@
+#!/usr/bin/expect -f
+set stty_init "rows 40 columns 200"
+set timeout 45
+log_user 0
+spawn ./vapora punch -port 43001
+set a $spawn_id
+# punch takes its endpoint from STUN, so only the secret is reusable here; the
+# two sides meet on the loopback.
+expect -i $a -re "punch \[0-9.\]+:\[0-9\]+/(\[A-Z2-7\]+)"
+set ia "127.0.0.1:43001/$expect_out(1,string)"
+puts "invite: [string length $ia]"
+spawn ./vapora punch -port 43002 $ia
+set b $spawn_id
+expect -i $b -re "you are" ; puts "B connected"
+send -i $b -- "hola\r"
+expect -i $a -re "hola" ; puts "A received it"
+send -i $a -- "@ok respuesta\r"
+expect -i $b -re "respuesta" ; puts "B received the reply"
+foreach id [list $a $b] { send -i $id -- "!exit\r" }
+puts "PUNCH STILL WORKS"

@@ -1,0 +1,30 @@
+# Build output
+/vapora
+/pong
+/build/
+/dist/
+*.exe
+*.test
+*.out
+
+# Go tooling
+/vendor/
+go.work
+go.work.sum
+
+# Generated knowledge graph
+/graphify-out/
+
+# Machine-specific agent settings: the graphify hooks carry an absolute path
+# into one developer's home, so they cannot be shared as they are
+/.claude/settings.json
+/.claude/settings.local.json
+
+# Local scratch
+*.local
+.env
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

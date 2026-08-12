@@ -1,0 +1,34 @@
+#!/usr/bin/expect -f
+set stty_init "rows 40 columns 120"
+set timeout 60
+log_user 0
+
+spawn ./pong host
+set host $spawn_id
+expect -i $host -re "pong join (\[0-9.\]+:\[0-9\]+)/(\[A-Z2-7\]+)"
+set endpoint $expect_out(1,string)
+set secret   $expect_out(2,string)
+regsub {^[0-9.]+:} $endpoint "127.0.0.1:" local
+puts "host is up, invite points at $endpoint (using $local for a local test)"
+
+spawn ./pong join "$local/$secret"
+set guest $spawn_id
+
+# The court appears once the path opens: the score line is the first thing drawn.
+expect -i $guest -re "—" ; puts "the guest sees the court"
+expect -i $host  -re "—" ; puts "the host sees the court"
+
+# Play: the ball has to move, which means the host is simulating and the guest
+# is being told. Look for the round trip the status line reports.
+expect -i $guest -re "(\[0-9\]+)ms"
+puts "the guest is measuring the path: $expect_out(1,string)ms"
+
+# Move a paddle on the guest and let the host receive it.
+send -i $guest -- "s"
+send -i $guest -- "s"
+send -i $guest -- "s"
+sleep 2
+
+send -i $host -- "q"
+send -i $guest -- "q"
+puts "PONG RAN OVER A PUNCHED CHANNEL"

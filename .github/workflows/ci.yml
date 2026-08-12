@@ -1,0 +1,127 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A superseded pull request run is waste, but cancelling a release halfway
+  # leaves a tag with no assets behind it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # These two check the things that rot without anybody noticing: a package
+      # meant to be imported losing its documentation, and a translated page
+      # quietly pointing somewhere that no longer exists.
+      - name: Documented public surface
+        run: go run ./internal/doclint pkg
+
+      - name: Documentation links
+        run: go run ./internal/linklint
+
+      - name: Test
+        run: go test ./... -race -count=1
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Release notes are generated from history, which a shallow clone
+          # does not carry.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve the version
+        id: version
+        run: echo "version=v0.1.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build every target
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p build dist
+
+          # CGO stays off so every artifact is a static binary that runs on a
+          # machine with nothing installed, which is the whole point of handing
+          # one to the peer on the other side.
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+
+            binary="vapora"
+            if [ "$os" = "windows" ]; then
+              binary="vapora.exe"
+            fi
+
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "build/${binary}" ./cmd/vapora
+
+            # The name carries no version on purpose: it is what makes
+            # /releases/latest/download/<name> a stable URL, and a stable URL is
+            # what lets people install with curl. A browser download would
+            # quarantine the binary and macOS would then refuse to run it.
+            # The version lives in the tag, and in `vapora version`.
+            archive="vapora_${os}_${arch}"
+            if [ "$os" = "windows" ]; then
+              (cd build && zip -q "../dist/${archive}.zip" "$binary")
+            else
+              # tar keeps the executable bit, which a raw asset downloaded
+              # through a browser loses.
+              tar -czf "dist/${archive}.tar.gz" -C build "$binary"
+            fi
+            rm -f "build/${binary}"
+          done
+
+          (cd dist && sha256sum ./* > SHA256SUMS)
+          ls -la dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "$VERSION" dist/* \
+            --title "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --generate-notes

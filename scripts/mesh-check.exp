@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+# A wide terminal keeps an invite on one line, which is the only reason for it:
+# the wrap itself is covered by a unit test.
+set stty_init "rows 40 columns 200"
+set timeout 45
+log_user 0
+
+proc invite_of {id port} {
+    expect -i $id -re "127\\.0\\.0\\.1:$port/\[A-Z2-7\]+" 
+    return $expect_out(0,string)
+}
+
+spawn ./vapora room -port 42701 -advertise 127.0.0.1:42701
+set a $spawn_id
+set ia [invite_of $a 42701]
+puts "A invite: [string length $ia]"
+
+spawn ./vapora room -port 42702 -advertise 127.0.0.1:42702 $ia
+set b $spawn_id
+expect -i $b -re "you are" ; puts "B joined"
+
+# A must notice B without being told, since membership is a poll.
+expect -i $a -re "joined" ; puts "A saw B arrive"
+
+send -i $b -- "hola desde B\r"
+expect -i $a -re "hola desde B" ; puts "A received B's line"
+
+send -i $b -- "!invite\r"
+set ib [invite_of $b 42702]
+puts "B invite via !invite: [string length $ib]"
+if {$ia eq $ib} { puts "FAIL: B echoed A's invite" ; exit 1 }
+
+# C enters through the member who was invited, not the host.
+spawn ./vapora room -port 42703 -advertise 127.0.0.1:42703 $ib
+set c $spawn_id
+expect -i $c -re "you are" ; puts "C joined through B"
+
+send -i $c -- "soy el tercero\r"
+expect -i $a -re "soy el tercero" ; puts "A received C's line, so A<->C is direct"
+expect -i $b -re "soy el tercero" ; puts "B received C's line"
+
+send -i $a -- "!who\r"
+expect -i $a -re "3 present|2 present" ; puts "!who: $expect_out(0,string)"
+
+foreach id [list $a $b $c] { send -i $id -- "!exit\r" }
+puts "ALL CHECKS PASSED"

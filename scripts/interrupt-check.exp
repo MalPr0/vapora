@@ -1,0 +1,18 @@
+#!/usr/bin/expect -f
+set stty_init "rows 40 columns 200"
+set timeout 20
+log_user 0
+
+# A live plain-mode room, sitting in the read that used to swallow ctrl+c.
+spawn ./vapora room -plain -port 43301 -advertise 127.0.0.1:43301
+expect -re "waiting for somebody"
+
+# Type a line first, so the reader is definitely parked in the next read.
+send -- "hola\r"
+sleep 1
+
+send -- "\003"
+expect {
+    eof { puts "PASS: one ctrl+c ended it, with no enter afterwards" ; exit 0 }
+    timeout { puts "FAIL: still running 20s after ctrl+c" ; exit 1 }
+}
