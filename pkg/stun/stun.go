@@ -29,6 +29,9 @@ const (
 )
 
 var (
+	// ErrNoMappedAddress means a server answered without saying what it saw,
+	// which happens with misconfigured servers and with things that are not
+	// STUN servers at all.
 	ErrNoMappedAddress     = errors.New("stun: response carries no mapped address")
 	errTransactionMismatch = errors.New("stun: transaction id mismatch")
 )

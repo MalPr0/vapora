@@ -194,6 +194,7 @@ func helloLocal(payload string) *net.UDPAddr {
 	return readCandidate([]byte(payload[PublicKeySize : PublicKeySize+candidateBytes]))
 }
 
+// Bytes is the raw key, for putting on the wire.
 func (k PublicKey) Bytes() []byte {
 	out := make([]byte, PublicKeySize)
 	copy(out, k[:])

@@ -15,7 +15,12 @@ type Direction string
 
 const (
 	// DirectionLow is sealed by the smaller of the two public keys.
-	DirectionLow  Direction = "low"
+	// DirectionLow is the end whose public key sorts first.
+	//
+	// In a mesh there is no "who invited whom", so the ordering comes from the
+	// keys themselves: both sides compute it and neither negotiates.
+	DirectionLow Direction = "low"
+	// DirectionHigh is the other end: whichever key sorts second.
 	DirectionHigh Direction = "high"
 )
 

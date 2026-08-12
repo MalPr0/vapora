@@ -17,6 +17,7 @@ type Invite struct {
 	Secret   Secret
 }
 
+// Token is the endpoint and secret without the command around them.
 func (i Invite) Token() string {
 	if len(i.Secret) == 0 {
 		return i.Endpoint.String()
@@ -24,6 +25,8 @@ func (i Invite) Token() string {
 	return i.Endpoint.String() + secretSeparator + i.Secret.String()
 }
 
+// Command renders the invite as a line the other side can paste and run,
+// which is the whole of the user interface for connecting.
 func (i Invite) Command(command string) string {
 	return fmt.Sprintf("%s %s", command, i.Token())
 }

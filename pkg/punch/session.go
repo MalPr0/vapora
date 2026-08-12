@@ -47,6 +47,11 @@ type Session struct {
 	extra        func(Opened) bool
 }
 
+// NewSession builds one end of a two-way channel.
+//
+// It never reads: datagrams are pushed in through Deliver, so the caller
+// decides how the socket is shared. output is where a session with no observer
+// attached prints what arrives, and may be nil.
 func NewSession(wire Wire, codec Codec, output io.Writer) *Session {
 	return &Session{
 		wire:     wire,
@@ -70,12 +75,16 @@ func (s *Session) events() Observer {
 	return s.observer
 }
 
+// SetPeer aims this side at an address. It is a suggestion, not a fact: what
+// settles where the peer really is, is a frame that opens under the key.
 func (s *Session) SetPeer(peer *net.UDPAddr) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.peer = peer
 }
 
+// Peer is where this session currently believes the other side is, or nil
+// before anything has been settled.
 func (s *Session) Peer() *net.UDPAddr {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

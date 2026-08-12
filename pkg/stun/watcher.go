@@ -39,6 +39,9 @@ type Watcher struct {
 	observed chan struct{}
 }
 
+// NewWatcher builds one. It keeps asking rather than asking once, because an
+// address is not a fact but a lease: switch network, or sit idle long enough,
+// and the invite you shared points at a door that no longer exists.
 func NewWatcher(servers []string, every time.Duration) *Watcher {
 	if len(servers) == 0 {
 		servers = DefaultServers
@@ -62,6 +65,8 @@ func (w *Watcher) OnChange(handler func(previous, current *net.UDPAddr)) {
 	w.onChange = handler
 }
 
+// Endpoint is the last address observed, or nil before the first answer. Use
+// Wait when there is nothing useful to do without one.
 func (w *Watcher) Endpoint() *net.UDPAddr {
 	w.mu.Lock()
 	defer w.mu.Unlock()

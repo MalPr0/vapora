@@ -39,6 +39,8 @@ func FirstEndpoint(ctx context.Context, conn *net.UDPConn, servers []string, tim
 type Mapping int
 
 const (
+	// MappingUnknown is the zero value: not measured, which is not the same as
+	// measured and inconclusive.
 	MappingUnknown Mapping = iota
 	// MappingEndpointIndependent keeps one external port per local socket no
 	// matter the destination. Hole punching works.
@@ -48,6 +50,9 @@ const (
 	MappingAddressDependent
 )
 
+// String names the behaviour in both vocabularies — the RFC's and the one
+// everybody actually says out loud — because the two rarely appear together
+// and readers arrive knowing one or the other.
 func (m Mapping) String() string {
 	switch m {
 	case MappingEndpointIndependent:
@@ -59,6 +64,9 @@ func (m Mapping) String() string {
 	}
 }
 
+// Observation is one server's answer: where it says this socket is, or why it
+// could not say. Failures are kept because agreement between servers is the
+// evidence, and a server that stayed silent is not a server that disagreed.
 type Observation struct {
 	Server   string
 	ServerIP string
@@ -66,6 +74,12 @@ type Observation struct {
 	Err      error
 }
 
+// Report is everything a round of probing found: what each server saw, and
+// the two classifications that follow from it.
+//
+// Mapping and Filtering answer different questions and only one of them can be
+// changed from this side. Mapping is whether your address stays the same for
+// every destination; filtering is who is allowed to send you a first packet.
 type Report struct {
 	LocalPort       int
 	Observations    []Observation

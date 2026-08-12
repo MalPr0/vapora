@@ -27,6 +27,7 @@ type Sink interface {
 // registered without knowing anything about this package.
 type SinkFunc func(payload []byte, from *net.UDPAddr) bool
 
+// Deliver calls the function.
 func (f SinkFunc) Deliver(payload []byte, from *net.UDPAddr) bool { return f(payload, from) }
 
 // Wire is the socket as a sender needs it. Nothing that sends also reads: one
@@ -46,6 +47,11 @@ type Mux struct {
 	fallback []Sink
 }
 
+// NewMux takes ownership of the socket's read loop.
+//
+// It is the only thing in this package that reads, which is what lets one
+// socket — and therefore one NAT binding and one keepalive — carry STUN, every
+// peer in a room, and a DHT client at once.
 func NewMux(conn *net.UDPConn) *Mux {
 	return &Mux{conn: conn, routes: map[string]Sink{}}
 }
@@ -68,6 +74,7 @@ func (m *Mux) Route(addr *net.UDPAddr, sink Sink) error {
 	return nil
 }
 
+// Unroute releases an address so somebody else may claim it.
 func (m *Mux) Unroute(addr *net.UDPAddr) {
 	if addr == nil {
 		return
@@ -87,6 +94,8 @@ func (m *Mux) Fallback(sink Sink) {
 	m.fallback = append(m.fallback, sink)
 }
 
+// Send writes one datagram. It is the only way anything reaches the wire, so
+// sessions and everything else share one socket without coordinating.
 func (m *Mux) Send(payload []byte, to *net.UDPAddr) error {
 	if to == nil {
 		return errors.New("punch: nowhere to send")
@@ -97,6 +106,8 @@ func (m *Mux) Send(payload []byte, to *net.UDPAddr) error {
 	return nil
 }
 
+// Local is the socket's own address, which is the port to announce anywhere
+// this program says where it can be reached.
 func (m *Mux) Local() *net.UDPAddr {
 	address, _ := m.conn.LocalAddr().(*net.UDPAddr)
 	return address

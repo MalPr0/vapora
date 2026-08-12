@@ -42,6 +42,9 @@ type Rendezvous struct {
 	port   int
 }
 
+// NewRendezvous prepares to meet on the DHT under a key derived from the
+// secret. The port is the one the conversation will arrive on, which is why
+// this shares the socket rather than opening its own.
 func NewRendezvous(wire dht.Wire, secret Secret, port int) (*Rendezvous, error) {
 	key, err := RendezvousKey(secret)
 	if err != nil {

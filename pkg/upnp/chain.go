@@ -30,6 +30,9 @@ type Chain struct {
 	Reason string
 }
 
+// ChainOptions configures how far the search for routers goes, and where it
+// starts. The defaults are enough for a home network; the upstream address
+// matters when the first router's WAN side is itself behind another one.
 type ChainOptions struct {
 	Protocol         string
 	Port             int

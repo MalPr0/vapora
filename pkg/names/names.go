@@ -16,6 +16,9 @@ import (
 // KeySize is the width of the keys this names, which is an X25519 public key.
 const KeySize = 32
 
+// Key is what gets named: an X25519 public key, or anything else of the same
+// width. It is an alias rather than a type so a caller can pass a key from
+// another package without converting it.
 type Key = [KeySize]byte
 
 const info = "vapora nickname v1"

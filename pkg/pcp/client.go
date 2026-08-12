@@ -27,6 +27,11 @@ type Client struct {
 	version  Version
 }
 
+// Dial prepares to talk to a gateway. It opens a socket and works out which
+// local address reaches it, which is the address a mapping has to name.
+//
+// Nothing is sent yet: call Detect to find out whether anybody is listening,
+// and which of the two protocols they speak.
 func Dial(gateway netip.Addr) (*Client, error) {
 	target := netip.AddrPortFrom(gateway, ServerPort)
 
@@ -45,10 +50,18 @@ func Dial(gateway netip.Addr) (*Client, error) {
 	return &Client{conn: conn, gateway: target, internal: internal.Unmap()}, nil
 }
 
-func (c *Client) Close() error            { return c.conn.Close() }
+// Close releases the socket.
+func (c *Client) Close() error { return c.conn.Close() }
+
+// Gateway is the router being asked.
 func (c *Client) Gateway() netip.AddrPort { return c.gateway }
-func (c *Client) Internal() netip.Addr    { return c.internal }
-func (c *Client) Version() Version        { return c.version }
+
+// Internal is this machine's address on the route to that gateway, which is
+// the one a mapping is installed for.
+func (c *Client) Internal() netip.Addr { return c.internal }
+
+// Version is what Detect found, and VersionUnknown before it has run.
+func (c *Client) Version() Version { return c.version }
 
 // Detect asks the gateway which protocol it speaks, if any.
 func (c *Client) Detect(ctx context.Context) (Version, error) {
@@ -126,6 +139,9 @@ func (c *Client) ExternalIP(ctx context.Context) (netip.Addr, error) {
 	return mapping.ExternalIP, nil
 }
 
+// MapRequest asks for a door. A suggested external port is a suggestion: the
+// gateway is free to hand back a different one, and what it returns is the
+// only port worth telling anybody about.
 type MapRequest struct {
 	Protocol              Protocol
 	InternalPort          uint16
@@ -137,6 +153,8 @@ type MapRequest struct {
 	Nonce [nonceSize]byte
 }
 
+// Mapping is what the gateway actually granted, which regularly differs from
+// what was asked for — a shorter lease, another port, or both.
 type Mapping struct {
 	Version      Version
 	Gateway      netip.AddrPort
@@ -154,6 +172,11 @@ func (m *Mapping) RenewAt() time.Time {
 	return m.Created.Add(m.Lifetime / 2)
 }
 
+// Map asks the gateway to open a port, in whichever protocol it speaks.
+//
+// A lease is not a pinhole: it governs this router only. Anything further out
+// still expires its binding on inactivity, so a mapping does not remove the
+// need to keep sending.
 func (c *Client) Map(ctx context.Context, request MapRequest) (*Mapping, error) {
 	if request.Nonce == ([nonceSize]byte{}) {
 		if _, err := rand.Read(request.Nonce[:]); err != nil {

@@ -20,6 +20,7 @@ const (
 	LinkLost
 )
 
+// String names the state of the path in words a person can act on.
 func (l Link) String() string {
 	switch l {
 	case LinkStale:

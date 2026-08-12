@@ -20,6 +20,7 @@ type Pair struct {
 	Joiner  string
 }
 
+// For is the name belonging to a role, which is how each side finds its own.
 func (p Pair) For(role punch.Role) string {
 	if role == punch.RoleJoiner {
 		return p.Joiner
@@ -27,6 +28,8 @@ func (p Pair) For(role punch.Role) string {
 	return p.Inviter
 }
 
+// Other is the name of whoever is not this role, which is how each side finds
+// the person it is talking to.
 func (p Pair) Other(role punch.Role) string {
 	if role == punch.RoleJoiner {
 		return p.Inviter

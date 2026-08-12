@@ -32,10 +32,15 @@ type STUNProbe struct {
 	Timeout time.Duration
 }
 
+// Filtering classifies one socket, and names the server that answered so two
+// measurements can be checked for having asked the same question.
 func (p STUNProbe) Filtering(ctx context.Context, conn *net.UDPConn) (stun.Filtering, string, error) {
 	return stun.ProbeFilteringAny(ctx, conn, p.servers(), p.timeout())
 }
 
+// Endpoint reports where the world sees this socket, which the experiment
+// records before and after: an address that moved on its own invalidates the
+// comparison.
 func (p STUNProbe) Endpoint(ctx context.Context, conn *net.UDPConn) (*net.UDPAddr, error) {
 	endpoint, _, err := stun.FirstEndpoint(ctx, conn, p.servers(), p.timeout())
 	return endpoint, err

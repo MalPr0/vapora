@@ -13,8 +13,15 @@ import (
 // security, and the key this package is given is derived elsewhere.
 const IDSize = 20
 
+// ID is a node identity or a key to look up — the network uses one space for
+// both, and distance between them is what organises it.
 type ID [IDSize]byte
 
+// NewID generates a random identity for this client.
+//
+// Real nodes derive theirs from their address so the network can resist a
+// single machine claiming to be everywhere. This one only asks questions and
+// stores nothing, so it has nothing to be trusted with.
 func NewID() (ID, error) {
 	var id ID
 	if _, err := rand.Read(id[:]); err != nil {

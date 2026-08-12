@@ -32,6 +32,9 @@ func (c *Conversation) OnLine(handler func(line string)) {
 	c.onLine = handler
 }
 
+// OnTyping is called when the peer starts or stops writing a line. Purely
+// advisory: an indicator that never arrives costs nothing, which is why it is
+// sent as ordinary traffic with no acknowledgement.
 func (c *Conversation) OnTyping(handler func(active bool)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

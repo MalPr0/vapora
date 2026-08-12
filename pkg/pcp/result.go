@@ -13,21 +13,33 @@ var (
 	// without either protocol enabled looks like.
 	ErrNoAnswer = errors.New("pcp: the gateway did not answer")
 
+	// ErrMalformedAnswer covers anything the gateway said that is not a
+	// well formed response. Home routers ship a lot of these.
 	ErrMalformedAnswer = errors.New("pcp: malformed answer")
-	ErrWrongOpcode     = errors.New("pcp: answer does not match the request opcode")
-	ErrWrongNonce      = errors.New("pcp: answer carries a different mapping nonce")
-	ErrNotSupported    = errors.New("pcp: the gateway speaks neither PCP nor NAT-PMP")
+	// ErrWrongOpcode means the gateway answered a different question.
+	ErrWrongOpcode = errors.New("pcp: answer does not match the request opcode")
+	// ErrWrongNonce means the answer belongs to somebody else's mapping. The
+	// nonce exists precisely so that another host on the same network cannot
+	// be mistaken for the gateway answering us.
+	ErrWrongNonce = errors.New("pcp: answer carries a different mapping nonce")
+	// ErrNotSupported means neither protocol is spoken here, which is the
+	// ordinary case and not a failure worth stopping for.
+	ErrNotSupported = errors.New("pcp: the gateway speaks neither PCP nor NAT-PMP")
 )
 
 // Version is which of the two protocols the gateway answered with.
 type Version int
 
 const (
+	// VersionUnknown means nothing has been detected yet.
 	VersionUnknown Version = iota
+	// VersionPCP is the newer protocol, and the one tried first.
 	VersionPCP
+	// VersionNATPMP is the older one, which most consumer routers speak.
 	VersionNATPMP
 )
 
+// String names the protocol the gateway turned out to speak.
 func (v Version) String() string {
 	switch v {
 	case VersionPCP:
@@ -40,13 +52,18 @@ func (v Version) String() string {
 }
 
 // Protocol is the IANA number carried in a mapping request.
+// Protocol is the transport a mapping is for, numbered as IANA does, which is
+// what both protocols put on the wire.
 type Protocol uint8
 
 const (
+	// ProtocolTCP is IANA protocol 6.
 	ProtocolTCP Protocol = 6
+	// ProtocolUDP is IANA protocol 17, and the one this project uses.
 	ProtocolUDP Protocol = 17
 )
 
+// String names the protocol, for messages a person will read.
 func (p Protocol) String() string {
 	switch p {
 	case ProtocolTCP:
@@ -64,6 +81,8 @@ type ResultError struct {
 	Code    int
 }
 
+// Error renders the gateway's refusal, with the code, because the codes are
+// what distinguish "not allowed" from "out of resources" from "ask again".
 func (e *ResultError) Error() string {
 	return fmt.Sprintf("pcp: %s gateway refused with %s", e.Version, e.description())
 }

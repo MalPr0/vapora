@@ -30,12 +30,16 @@ func In(room *punch.Room) *Group {
 	return group
 }
 
+// OnLine is called for each line somebody says, with who said it. Unlike a
+// two-way conversation there is no default speaker, so every line is named.
 func (g *Group) OnLine(handler func(from Speaker, line string)) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.onLine = handler
 }
 
+// OnTyping reports who is currently writing. Several people can be at once,
+// so this is a fact about one member rather than about the room.
 func (g *Group) OnTyping(handler func(from Speaker, active bool)) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -48,6 +52,8 @@ func (g *Group) Say(text string) {
 	g.room.Broadcast(encode(tagLine, safeLine(text)))
 }
 
+// SetTyping tells everyone whether a line is in progress here. It goes to each
+// member down their own pair channel, like everything else.
 func (g *Group) SetTyping(active bool) {
 	g.room.Broadcast(typingPayload(active))
 }

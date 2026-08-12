@@ -17,8 +17,13 @@ import (
 type Role string
 
 const (
+	// RoleInviter is the side that minted the secret and is waiting.
+	//
+	// The role decides which derived key seals and which opens, so two sides
+	// built from the same secret end up mirrored.
 	RoleInviter Role = "inviter"
-	RoleJoiner  Role = "joiner"
+	// RoleJoiner is the side that received the invite.
+	RoleJoiner Role = "joiner"
 )
 
 func (r Role) other() Role {
@@ -36,8 +41,14 @@ const (
 )
 
 var (
+	// ErrUnauthenticated means a frame did not open: the wrong secret, or simply
+	// somebody else's packet arriving on a shared port. It is the ordinary case on
+	// a public address and is never answered — silence is what makes a scan
+	// indistinguishable from a closed port.
 	ErrUnauthenticated = errors.New("punch: frame does not authenticate, wrong secret or foreign packet")
-	ErrReplayed        = errors.New("punch: frame replays a nonce already seen")
+	// ErrReplayed means a frame authenticated but has been seen before. The
+	// window is per sender, so one peer's traffic cannot invalidate another's.
+	ErrReplayed = errors.New("punch: frame replays a nonce already seen")
 )
 
 // Codec turns frames into wire bytes and back. Session depends on this instead
@@ -73,6 +84,11 @@ type SecretCodec struct {
 	seen    map[[prefixBytes]byte]*replayWindow
 }
 
+// NewSecretCodec derives the two directional keys from a shared secret.
+//
+// The role decides which key seals and which opens, so both sides build this
+// from the same secret and end up mirrored. A key per direction means a frame
+// cannot be reflected back at its sender and still authenticate.
 func NewSecretCodec(secret Secret, role Role) (*SecretCodec, error) {
 	sealKey, err := deriveKey(secret, nil, keyInfo+string(role))
 	if err != nil {
@@ -132,6 +148,9 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return aead, nil
 }
 
+// Seal encrypts a frame under this side's sending key. Every frame carries a
+// nonce whose first bytes identify this codec instance, which is what tells a
+// peer that moved apart from a stranger holding the same invite.
 func (c *SecretCodec) Seal(kind byte, payload string) []byte {
 	c.mu.Lock()
 	c.counter++
@@ -143,6 +162,10 @@ func (c *SecretCodec) Seal(kind byte, payload string) []byte {
 	return c.sealAEAD.Seal(wire, nonce, encode(kind, payload), nil)
 }
 
+// Open decrypts a frame, and refuses one that has been seen before.
+//
+// A frame that does not open is never answered: silence is what makes probing
+// this address indistinguishable from probing a closed one.
 func (c *SecretCodec) Open(wire []byte) (Opened, error) {
 	if len(wire) < nonceBytes+c.openAEAD.Overhead() {
 		return Opened{}, ErrUnauthenticated

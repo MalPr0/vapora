@@ -13,6 +13,8 @@ import (
 type Filtering int
 
 const (
+	// FilteringUnknown is the zero value: not measured, which is not the same
+	// as measured and open.
 	FilteringUnknown Filtering = iota
 	// FilteringEndpointIndependent accepts packets from anyone once the
 	// mapping exists, so an unannounced peer gets through.
@@ -24,6 +26,7 @@ const (
 	FilteringAddressAndPortDependent
 )
 
+// String names the filtering in both vocabularies, as Mapping does.
 func (f Filtering) String() string {
 	switch f {
 	case FilteringEndpointIndependent:

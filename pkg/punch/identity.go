@@ -10,6 +10,8 @@ import (
 // PublicKeySize is the width of an X25519 public key.
 const PublicKeySize = 32
 
+// ErrBadPublicKey covers a key that is not one: wrong length, not base32, or
+// all zeroes, which X25519 would otherwise accept into a useless shared value.
 var ErrBadPublicKey = errors.New("punch: not a usable public key")
 
 // PublicKey identifies a participant. It is the identity everything else hangs
@@ -18,10 +20,12 @@ var ErrBadPublicKey = errors.New("punch: not a usable public key")
 // into a name a person can say is pkg/names, and is nothing to do with here.
 type PublicKey [PublicKeySize]byte
 
+// String is the base32 form, which is what invites carry.
 func (k PublicKey) String() string {
 	return inviteEncoding.EncodeToString(k[:])
 }
 
+// ParsePublicKey reads a key back from its text form.
 func ParsePublicKey(value string) (PublicKey, error) {
 	var key PublicKey
 
@@ -52,6 +56,11 @@ type Identity struct {
 	public  PublicKey
 }
 
+// NewIdentity generates a keypair for this process.
+//
+// It is not persisted anywhere on purpose: a fresh identity every run means
+// there is nothing to steal from disk and nothing that links two sessions to
+// the same person.
 func NewIdentity() (*Identity, error) {
 	private, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
@@ -63,6 +72,7 @@ func NewIdentity() (*Identity, error) {
 	return identity, nil
 }
 
+// Public is the half that is safe to share, and is what a member is known by.
 func (i *Identity) Public() PublicKey { return i.public }
 
 // shared is the X25519 agreement with a peer. It is never used as a key on its

@@ -22,6 +22,7 @@ type Observer interface {
 // ObserverFunc adapts a function, which is all most callers need.
 type ObserverFunc func(payload []byte)
 
+// Data calls the function.
 func (f ObserverFunc) Data(payload []byte) { f(payload) }
 
 // writerObserver is the default: it prints to the session's writer, which keeps

@@ -42,6 +42,9 @@ const (
 )
 
 var (
+	// ErrNoNodes means nothing on the network answered at all, which is a
+	// different situation from a key nobody has announced: one says wait, the
+	// other says stop waiting.
 	ErrNoNodes = errors.New("dht: no node answered, the network is unreachable from here")
 	// ErrNotAnnounced means nodes answered but none accepted the announcement,
 	// which leaves nothing for the other side to find. Silently treating that
@@ -63,6 +66,9 @@ type Client struct {
 	nextTag uint32
 }
 
+// NewClient builds a client over a socket that something else reads. Replies
+// arrive through Deliver, so the DHT shares one socket — and therefore one NAT
+// binding — with whatever else is using it.
 func NewClient(wire Wire) (*Client, error) {
 	id, err := NewID()
 	if err != nil {

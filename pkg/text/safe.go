@@ -19,6 +19,11 @@ func Safe(line string) string {
 	return SafeLimit(line, MaxRendered)
 }
 
+// SafeLimit is Safe with the length chosen by the caller.
+//
+// The marker that says a line was cut is counted against the limit rather than
+// added to it, so what comes back is never wider than asked for. Getting that
+// backwards once meant a long line was sanitised out and rejected back in.
 func SafeLimit(line string, max int) string {
 	var safe strings.Builder
 	safe.Grow(len(line))

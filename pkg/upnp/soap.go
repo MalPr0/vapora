@@ -22,6 +22,9 @@ type UPnPError struct {
 	Description string
 }
 
+// Error renders the router's own complaint, code and all. The codes are worth
+// keeping: 718 means the mapping is taken and 725 means the router only does
+// permanent leases, and those call for opposite responses.
 func (e *UPnPError) Error() string {
 	return fmt.Sprintf("upnp: %s rejected with error %d (%s)", e.Action, e.Code, e.Description)
 }

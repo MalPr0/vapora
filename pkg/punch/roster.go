@@ -18,6 +18,9 @@ const (
 	entryBytes     = PublicKeySize + 2*candidateBytes
 )
 
+// ErrRosterTooLarge means somebody announced more members than a room holds.
+// It is enforced while parsing rather than afterwards, so a hostile roster
+// cannot make this side allocate on its say-so.
 var ErrRosterTooLarge = errors.New("punch: roster names more members than a room holds")
 
 // Entry is one member as somebody else sees them.
@@ -47,8 +50,11 @@ func (e Entry) Candidates() []*net.UDPAddr {
 	return addrs
 }
 
+// Roster is who somebody says is present. It is gossip: every entry is a
+// suggestion about where to try, and only cryptography settles who is real.
 type Roster []Entry
 
+// Marshal packs a roster into a padded payload of fixed size entries.
 func (r Roster) Marshal() string {
 	blob := make([]byte, 0, 1+len(r)*entryBytes)
 	blob = append(blob, byte(len(r)))
@@ -126,4 +132,6 @@ func readCandidate(record []byte) *net.UDPAddr {
 	return &net.UDPAddr{IP: ip, Port: int(port)}
 }
 
+// ErrMalformedRoster covers a roster that does not decode: a truncated entry,
+// a member with no key, or one with nowhere to be reached.
 var ErrMalformedRoster = errors.New("punch: malformed roster")

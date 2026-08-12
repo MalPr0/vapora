@@ -22,6 +22,11 @@ type PortMapping struct {
 	Enabled       bool
 }
 
+// ExternalIP asks the router what address the world sees.
+//
+// Behind two layers of NAT this returns the inner router's WAN address, which
+// is private and useless to a peer on the internet. What STUN observes is the
+// only address worth publishing; this one is for telling the two cases apart.
 func (g *Gateway) ExternalIP(ctx context.Context) (string, error) {
 	values, err := g.call(ctx, "GetExternalIPAddress", nil)
 	if err != nil {
@@ -65,6 +70,9 @@ func (g *Gateway) addPortMapping(ctx context.Context, protocol string, externalP
 	return err
 }
 
+// DeletePortMapping closes a door this program opened. Worth calling on the
+// way out: a mapping left behind outlives the process, and on a router that
+// ignores lease times it outlives the reboot too.
 func (g *Gateway) DeletePortMapping(ctx context.Context, protocol string, externalPort int) error {
 	_, err := g.call(ctx, "DeletePortMapping", []soapArgument{
 		{Name: "NewRemoteHost", Value: ""},
@@ -77,6 +85,8 @@ func (g *Gateway) DeletePortMapping(ctx context.Context, protocol string, extern
 	return err
 }
 
+// GetPortMapping reads back what the router believes it has. Routers accept
+// mappings they never make, so reading one back is the only way to know.
 func (g *Gateway) GetPortMapping(ctx context.Context, protocol string, externalPort int) (*PortMapping, error) {
 	values, err := g.call(ctx, "GetSpecificPortMappingEntry", []soapArgument{
 		{Name: "NewRemoteHost", Value: ""},

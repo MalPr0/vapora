@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// ErrRoomFull means the cap has been reached. The newcomer is told rather
+// than ignored, so it can say so instead of waiting out a timeout.
 var ErrRoomFull = errors.New("punch: the room is full")
 
 // Member is one participant as the room sees them.
@@ -33,6 +35,7 @@ type RoomObserver interface {
 // RoomObserverFunc adapts a function.
 type RoomObserverFunc func(from Member, payload []byte)
 
+// Data calls the function.
 func (f RoomObserverFunc) Data(from Member, payload []byte) { f(from, payload) }
 
 type roomMember struct {
@@ -67,6 +70,8 @@ type Room struct {
 	observer RoomObserver
 }
 
+// RoomOptions is what a room needs to exist. Identity and Mux are required;
+// the rest have workable defaults.
 type RoomOptions struct {
 	Identity *Identity
 	Secret   Secret
@@ -80,6 +85,11 @@ type RoomOptions struct {
 	Max int
 }
 
+// NewRoom builds a mesh of pair channels.
+//
+// It registers its own sinks on the mux, so it must be built before anything
+// that should see datagrams after it. Nothing happens on the network until
+// Join is called or somebody says hello.
 func NewRoom(opts RoomOptions) (*Room, error) {
 	if opts.Identity == nil || opts.Mux == nil {
 		return nil, errors.New("punch: a room needs an identity and a mux")
@@ -123,12 +133,15 @@ func NewRoom(opts RoomOptions) (*Room, error) {
 	return room, nil
 }
 
+// Observe sets who receives what members send. One at a time; the last call
+// wins.
 func (r *Room) Observe(observer RoomObserver) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.observer = observer
 }
 
+// Identity is this participant's keypair.
 func (r *Room) Identity() *Identity { return r.identity }
 
 // Invite is what this member hands out. Any member can issue one: it carries
@@ -182,6 +195,8 @@ func (r *Room) SendTo(key PublicKey, payload []byte) bool {
 	return true
 }
 
+// Goodbye tells everyone this side is leaving, so they can drop it at once
+// instead of waiting out the whole silence budget to find out.
 func (r *Room) Goodbye() {
 	for _, entry := range r.each() {
 		entry.session.Goodbye()

@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// ErrNoGateway means nothing answered the multicast search. It is the normal
+// outcome on a network whose router has UPnP switched off, which is most of
+// them, and it is not on its own a reason to stop.
 var ErrNoGateway = errors.New("upnp: no internet gateway device found on the local network")
 
 const (

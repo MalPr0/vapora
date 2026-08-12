@@ -9,6 +9,9 @@ import (
 	"github.com/MalPr0/vapora/pkg/stun"
 )
 
+// ErrBadProfile covers a code that is not one, including one that lost a
+// character on its way through a chat window — which is why the code carries a
+// check byte at all.
 var ErrBadProfile = errors.New("diag: not a network profile")
 
 // Profile is everything about one side that decides whether two people can
@@ -54,6 +57,9 @@ func check(body string) string {
 	return fmt.Sprintf("%02X", sum[0])
 }
 
+// ParseProfile reads a code somebody sent back. Case and stray whitespace are
+// tolerated because that is what a paste looks like; a lost character is not,
+// because it would otherwise describe a different network entirely.
 func ParseProfile(code string) (Profile, error) {
 	parts := strings.Split(strings.ToUpper(strings.TrimSpace(code)), "-")
 	if len(parts) != 3 {

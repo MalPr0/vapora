@@ -15,6 +15,7 @@ import (
 type Verdict int
 
 const (
+	// VerdictUnknown is the zero value: nothing has been decided yet.
 	VerdictUnknown Verdict = iota
 	// VerdictAlreadyOpen means the chain never filtered, so a one way invite
 	// already works.
@@ -29,6 +30,8 @@ const (
 	VerdictInconclusive
 )
 
+// String is the verdict in words, phrased as the sentence a person needs
+// rather than a constant name.
 func (v Verdict) String() string {
 	switch v {
 	case VerdictAlreadyOpen:
@@ -44,12 +47,17 @@ func (v Verdict) String() string {
 	}
 }
 
+// SocketFiltering is what one socket measured, and why it did not when it
+// could not. A failed measurement is kept rather than dropped: the experiment
+// compares two sockets, and knowing one of them is missing is the difference
+// between a result and a wrong result.
 type SocketFiltering struct {
 	Filtering stun.Filtering
 	Server    string
 	Err       error
 }
 
+// String reports the filtering, or says plainly that it was never measured.
 func (s SocketFiltering) String() string {
 	if s.Err != nil {
 		return fmt.Sprintf("unmeasured (%v)", s.Err)
@@ -57,6 +65,12 @@ func (s SocketFiltering) String() string {
 	return s.Filtering.String()
 }
 
+// FilterResult is the whole differential experiment: two sockets measured
+// before a port mapping and again after, with only one of them mapped.
+//
+// One socket alone cannot attribute anything — the network might simply have
+// changed between the two measurements. The control is what makes the
+// comparison mean something, and its readings are here to be checked.
 type FilterResult struct {
 	SubjectPort, ControlPort         int
 	ExternalPortAsked                int

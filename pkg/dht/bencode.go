@@ -13,6 +13,8 @@ import (
 	"strconv"
 )
 
+// ErrBencode wraps anything malformed on the wire. Common enough to be
+// unremarkable: this is a network of implementations that do not all agree.
 var ErrBencode = errors.New("dht: malformed bencode")
 
 // Bencode values are one of four things. Strings carry bytes, not text: node
@@ -211,11 +213,14 @@ func (d Dict) String(key string) (string, bool) {
 	return value, ok
 }
 
+// Dict reads a nested dictionary, and reports false when the key is absent or
+// holds something else. Every read of a reply has to survive both.
 func (d Dict) Dict(key string) (Dict, bool) {
 	value, ok := d[key].(Dict)
 	return value, ok
 }
 
+// List reads a list under a key, with the same tolerance as Dict.
 func (d Dict) List(key string) (List, bool) {
 	value, ok := d[key].(List)
 	return value, ok

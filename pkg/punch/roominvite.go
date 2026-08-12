@@ -13,7 +13,13 @@ import (
 const inviteVersion byte = 1
 
 var (
+	// ErrInviteVersion means the invite was minted by a build that speaks a
+	// different format. Saying so beats failing to decode: mismatched versions
+	// are the commonest cause of two people staring at silence.
 	ErrInviteVersion = errors.New("punch: invite is from another version")
+	// ErrNotRoomInvite covers anything that is not one, including a two-way
+	// `punch` invite — which is worth telling apart, because it is a mistake
+	// somebody can act on.
 	ErrNotRoomInvite = errors.New("punch: not a room invite")
 )
 
@@ -30,6 +36,8 @@ type RoomInvite struct {
 	Host     PublicKey
 }
 
+// Token is the endpoint and the encoded blob: a version, the room secret and
+// the host's public key, which is what pins who is being joined.
 func (i RoomInvite) Token() string {
 	blob := make([]byte, 0, 1+secretBytes+PublicKeySize)
 	blob = append(blob, inviteVersion)
@@ -39,6 +47,7 @@ func (i RoomInvite) Token() string {
 	return i.Endpoint.String() + secretSeparator + inviteEncoding.EncodeToString(blob)
 }
 
+// Command renders a room invite as a runnable line.
 func (i RoomInvite) Command(command string) string {
 	return fmt.Sprintf("%s %s", command, i.Token())
 }
